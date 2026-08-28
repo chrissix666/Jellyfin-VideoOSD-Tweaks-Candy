@@ -322,6 +322,17 @@
 
         const idMap = {
             favorite: '.btnUserRating',
+            // Confirmed from the real InPlayerEpisodePreview source
+            // (a separate, third-party plugin many users have installed
+            // alongside this one): its button has a fixed id
+            // "popupPreviewButton" (not a class), and its own insertion
+            // logic (childBefore.after(...), where childBefore is the
+            // Favorite button) places it immediately after Favorite by
+            // default, confirmed directly from its own BaseTemplate code.
+            // Already gracefully handled if it's not actually installed:
+            // container.querySelector() below simply finds nothing and
+            // the loop skips it entirely, same as every other item here.
+            episodepreview: '#popupPreviewButton',
             subtitles: '.btnSubtitles',
             audio: '.btnAudio',
             mute: '.buttonMute',
