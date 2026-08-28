@@ -52,6 +52,55 @@
     }
 
     // ============================================================
+    // SHARED HEADER HIDES (4 fields only)
+    // ============================================================
+    // Back/Title/SyncPlay/Cast live in the app's own separate AppHeader
+    // component (confirmed from the real source: it's a sibling of
+    // #videoOsdPage, not a descendant of it), reused site-wide. Everything
+    // else on this page moved to plain server-side CSS a while back, but
+    // these 4 stay JavaScript: an earlier attempt used
+    // "body:has(#videoOsdPage:not(.hide)) .selector" to reach across that
+    // sibling boundary in pure CSS, which turned out to be a real,
+    // documented performance problem (MDN explicitly warns against
+    // anchoring ":has()" to a very broad element like "body", since the
+    // browser must re-evaluate it on every DOM mutation anywhere on the
+    // page, and Jellyfin's own OSD constantly changes class/style during
+    // active playback), found live after the user correctly pointed out
+    // this was newly introduced, not a pre-existing issue. Scoped to only
+    // these 4 fields (not the other 18 that already work fine as plain,
+    // unproblematic CSS), and gated on isVideoOsdActive() so hiding
+    // Back/Sync/Cast/Title never affects any other page on the site.
+    const FORCE_HIDE_CLASS = 'jvosd-tc-force-hide';
+    const STYLE_ID = 'jvosd-tc-core-style';
+
+    function ensureCoreStyle() {
+        if (document.getElementById(STYLE_ID)) return;
+        const style = document.createElement('style');
+        style.id = STYLE_ID;
+        style.textContent = `.${FORCE_HIDE_CLASS} { display: none !important; }`;
+        document.head.appendChild(style);
+    }
+
+    function setHidden(selector, hidden) {
+        document.querySelectorAll(selector).forEach(function (el) {
+            el.classList.toggle(FORCE_HIDE_CLASS, !!hidden);
+        });
+    }
+
+    function isVideoOsdActive() {
+        const page = document.querySelector('#videoOsdPage');
+        return !!page && !page.classList.contains('hide');
+    }
+
+    function applyHeaderHides(config) {
+        const active = isVideoOsdActive();
+        setHidden('.headerBackButton', active && config.HideBackButton);
+        setHidden('.pageTitle', active && config.HideTitleBar);
+        setHidden('.headerSyncButton', active && config.HideSyncPlayButton);
+        setHidden('.headerCastButton', active && config.HideCastButton);
+    }
+
+    // ============================================================
     // TITLE RECONSTRUCTION
     // ============================================================
     const TITLE_ID = 'pageTitle';
@@ -171,13 +220,13 @@
 
         if (!rawText) return;
 
-        // HideTitleBar itself is now handled entirely by server-side CSS
-        // (see Plugin.cs's BuildDynamicCss(), the ":has()"-scoped rule for
-        // ".pageTitle"), this used to also short-circuit here in JS, now
-        // genuinely redundant, removed. The reconstruction below still
-        // runs even when the title bar is hidden, harmless (a handful of
-        // span elements, invisible either way), simpler than threading a
-        // special case through here for no real benefit.
+        // HideTitleBar's actual visibility is handled separately by
+        // applyHeaderHides() above (a FORCE_HIDE_CLASS toggle on this
+        // same .pageTitle element), independent of the content rebuild
+        // below, no conflict: one controls whether it's shown at all, the
+        // other controls what it shows when it is. The reconstruction
+        // below runs regardless, harmless when hidden (a handful of span
+        // elements, invisible either way).
         const parsed = parseTitleSync(rawText);
         const kind = itemInfo?.kind || (parsed.kind === 'episode' ? 'episode' : null);
 
@@ -235,10 +284,15 @@
 
     function applyAll() {
         if (!currentConfig) return;
-        // Hide/reorder for buttons and header elements moved to
-        // server-side CSS entirely (see Plugin.cs's BuildDynamicCss()),
-        // only the title text reconstruction genuinely needs JavaScript,
-        // it's substrings inside one string, not separate elements.
+        // Everything except the 4 shared-header fields and the title text
+        // reconstruction moved to server-side CSS (see Plugin.cs's
+        // BuildDynamicCss()). Those 2 stay JavaScript: the header fields
+        // because ":has()" anchored to "body" turned out to be a real
+        // performance problem (see applyHeaderHides() above), the title
+        // text because it's substrings inside one string, not separate
+        // elements CSS could ever target.
+        ensureCoreStyle();
+        applyHeaderHides(currentConfig);
         applyTitleDisplay(currentConfig, currentItemInfo);
     }
 
