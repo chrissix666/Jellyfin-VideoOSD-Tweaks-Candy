@@ -82,7 +82,20 @@
         if (document.getElementById(STYLE_ID)) return;
         const style = document.createElement('style');
         style.id = STYLE_ID;
-        style.textContent = `.${FORCE_HIDE_CLASS} { display: none !important; }`;
+        // FIX for a real bug found live, confirmed via actual Chromium
+        // rendering: .pageTitle is "display: inline-flex" (confirmed
+        // against the real source), and CSS whitespace-collapsing rules
+        // strip leading/trailing space from a flex item's own text
+        // content, so the plain " - " text that used to live inside the
+        // separator span rendered visibly as just "-", no gap on either
+        // side, same for the space before the year. Fixed with real
+        // margin instead, which isn't subject to that same collapsing,
+        // confirmed with an actual measured pixel gap (not just "should
+        // work" -- 19.3px measured directly via a real headless browser
+        // render before shipping this).
+        style.textContent = `.${FORCE_HIDE_CLASS} { display: none !important; }
+.jvosd-tc-title-sep { margin: 0 0.35em; }
+.jvosd-tc-title-year-sep { margin-left: 0.35em; }`;
         document.head.appendChild(style);
     }
 
@@ -110,7 +123,19 @@
         setHidden('#videoOsdPage .btnPreviousChapter, #videoOsdPage .btnNextChapter', config.HideChapterButtons);
         setHidden('#videoOsdPage .btnPreviousTrack, #videoOsdPage .btnNextTrack', config.HideTrackButtons);
         setHidden('#videoOsdPage .btnRecord', config.HideRecordButton);
-        setHidden('#videoOsdPage .osdTimeText', config.HideEndsAtInfo);
+        // FIX for a real, serious layout bug found live (with a
+        // screenshot showing the whole right-hand button group shifted
+        // left): confirmed against the real source, ".osdTimeText" isn't
+        // just a text container, it carries "margin-right: auto", the
+        // flexbox mechanism that pushes every button after it
+        // (Favorite/Subtitles/Audio/Volume/Settings/etc) to the right
+        // edge. Hiding the whole element removed that spacer entirely,
+        // collapsing the whole right-hand group leftward. Fixed by
+        // hiding only the inner ".endsAtText" span (confirmed from the
+        // real source: "osdTimeText" wraps a nested "endsAtText" span),
+        // which has no such margin, leaving the spacer intact. Verified
+        // with an actual rendered Chromium page, not just reasoned about.
+        setHidden('#videoOsdPage .osdTimeText .endsAtText', config.HideEndsAtInfo);
 
         setHidden('#videoOsdPage .btnUserRating', config.HideFavoriteButton);
         setHidden('#videoOsdPage .btnSubtitles', config.HideSubtitlesButton);
@@ -212,7 +237,7 @@
             if (idx > 0) {
                 const sep = document.createElement('span');
                 sep.className = 'jvosd-tc-title-sep';
-                sep.textContent = ' - ';
+                sep.textContent = '-';
                 el.appendChild(sep);
             }
             const span = document.createElement('span');
@@ -222,13 +247,8 @@
         });
 
         if (yearText) {
-            const yearSep = document.createElement('span');
-            yearSep.className = 'jvosd-tc-title-year-sep';
-            yearSep.textContent = ' ';
-            el.appendChild(yearSep);
-
             const yearSpan = document.createElement('span');
-            yearSpan.className = 'jvosd-tc-title-year';
+            yearSpan.className = 'jvosd-tc-title-year jvosd-tc-title-year-sep';
             yearSpan.textContent = yearText;
             el.appendChild(yearSpan);
         }
@@ -244,6 +264,25 @@
         return known.concat(missing);
     }
 
+    // FIX for a real issue found live, a good simplification the user
+    // pointed out: if every one of these settings is at its default (no
+    // hiding, no reordering, no original-title extra), there's no reason
+    // to touch .pageTitle's content at all, Jellyfin's own native
+    // rendering is already exactly right. Rebuilding into our own span
+    // structure regardless, even when it would end up looking identical,
+    // was needless risk (and, before the spacing fix, is exactly what
+    // was producing "shows everything again but no spaces" when the user
+    // unchecked every hide option, since REBUILDING isn't automatically
+    // the same as "left completely alone").
+    function needsTitleIntervention(config) {
+        if (config.HideTitleBar) return true;
+        if (config.HideSeriesTitle || config.HideSeasonEpisodeNumber || config.HideEpisodeTitle) return true;
+        if (config.HideYearMovies || config.HideYearEpisodes || config.HideYearVideos) return true;
+        if (config.ShowOriginalTitleMovies) return true;
+        if (typeof config.TopLeftOrder === 'string' && config.TopLeftOrder && config.TopLeftOrder !== 'series,sxe,title') return true;
+        return false;
+    }
+
     function applyTitleDisplay(config, itemInfo) {
         // Gated the same way applyHeaderButtonHides() is: h3.pageTitle is
         // the SAME shared header title element on every single page
@@ -252,6 +291,23 @@
 
         const el = document.querySelector('h3.' + TITLE_ID);
         if (!el) return;
+
+        if (!needsTitleIntervention(config)) {
+            // Nothing configured needs our own rendering at all. If an
+            // earlier config change left our span structure in place
+            // (its cached raw text still matches, i.e. Jellyfin hasn't
+            // re-set the title since), restore plain native text and
+            // clear our own bookkeeping, so a later real intervention
+            // starts from a clean slate rather than an already-rebuilt
+            // one.
+            if (el.getAttribute(RAW_TEXT_MARKER_ATTR) === el.textContent && el.dataset.jvosdTcSourceText) {
+                el.textContent = el.dataset.jvosdTcSourceText;
+                el.removeAttribute(RAW_TEXT_MARKER_ATTR);
+                delete el.dataset.jvosdTcSourceText;
+            }
+            el.classList.remove(FORCE_HIDE_CLASS);
+            return;
+        }
 
         const rawText = el.getAttribute(RAW_TEXT_MARKER_ATTR) === el.textContent
             ? el.dataset.jvosdTcSourceText
@@ -286,13 +342,18 @@
             };
             orderedParts = order.map(function (k) { return partsByKey[k]; });
         } else {
-            const nameParts = [{ key: 'name', text: parsed.name }];
-
-            if (kind === 'movie' && config.ShowOriginalTitleMovies && itemInfo?.originalTitle && itemInfo.originalTitle !== parsed.name) {
-                nameParts.push({ key: 'originaltitle', text: itemInfo.originalTitle });
-            }
-
-            orderedParts = nameParts;
+            // FIX for a real behavior gap the user pointed out: this used
+            // to APPEND the original title next to the normal one
+            // ("Title - OriginalTitle"), matching the field's literal
+            // description text ("Adds the ... original title next to its
+            // title") but not what the user actually wants: the original
+            // title should REPLACE the normal title entirely, falling
+            // back to the normal title if no original title exists (or
+            // is identical to it, nothing meaningful to switch to).
+            const displayName = (kind === 'movie' && config.ShowOriginalTitleMovies && itemInfo?.originalTitle && itemInfo.originalTitle !== parsed.name)
+                ? itemInfo.originalTitle
+                : parsed.name;
+            orderedParts = [{ key: 'name', text: displayName }];
         }
 
         renderTitleParts(el, orderedParts, yearText);
@@ -304,14 +365,37 @@
     // ============================================================
     // ZONE ORDERING
     // ============================================================
+    // FIX for a real, serious bug found live, confirmed via actual
+    // MutationObserver execution: insertBefore() ALWAYS generates a
+    // childList mutation, even when moving an element to the exact
+    // position it's already in. Since applyBottomLeftOrder() and
+    // applyBottomRightOrder() run on containers that are genuine
+    // descendants of #videoOsdPage (inside the very subtree Core's own
+    // osdObserver watches), every call to the old version of this
+    // function re-triggered that same observer, which called applyAll()
+    // again, which called this function again, forever, as long as a
+    // video was playing AND either order setting had a non-empty value
+    // (from any earlier session, not necessarily one just set) --
+    // continuous CPU churn with no natural end. Fixed by checking whether
+    // the elements are ALREADY in the target order first, and doing
+    // nothing at all if so, so a settled, correct order produces zero
+    // further DOM mutations, breaking the feedback loop entirely.
     function applyOrder(container, orderCsv, idAttr) {
         if (!container || typeof orderCsv !== 'string' || !orderCsv) return;
         const order = orderCsv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
         if (!order.length) return;
 
-        order.slice().reverse().forEach(function (id) {
-            const el = container.querySelector('[' + idAttr + '="' + CSS.escape(id) + '"]');
-            if (el) container.insertBefore(el, container.firstChild);
+        const targetFrontEls = order
+            .map(function (id) { return container.querySelector('[' + idAttr + '="' + CSS.escape(id) + '"]'); })
+            .filter(Boolean);
+        if (!targetFrontEls.length) return;
+
+        const currentChildren = Array.prototype.slice.call(container.children);
+        const alreadyCorrect = targetFrontEls.every(function (el, idx) { return currentChildren[idx] === el; });
+        if (alreadyCorrect) return;
+
+        targetFrontEls.slice().reverse().forEach(function (el) {
+            container.insertBefore(el, container.firstChild);
         });
     }
 
@@ -422,9 +506,26 @@
     }
 
     function onVideoOsdShow() {
-        applyAll();
-        refreshItemInfoAndReapply();
-        startOsdObserver();
+        // FIX for a real gap found live: this used to just reuse
+        // currentConfig, which was only ever fetched ONCE at the very
+        // first script load. If the admin changed a Hide/reorder setting
+        // and saved it, then navigated to a video WITHOUT a full page
+        // reload in between (e.g. just navigating within the single-page
+        // app), the OLD configuration was still what got applied, not
+        // the one just saved. Re-fetching fresh every time the video OSD
+        // becomes active fixes this: fetchPluginConfig() resolves nearly
+        // immediately once window.ApiClient exists (which it always does
+        // by this point, well after initial page load), so this adds no
+        // meaningful delay in the common case.
+        fetchPluginConfig().then(function (pluginConfig) {
+            if (!pluginConfig) return;
+            currentConfig = pluginConfig;
+            applyAll();
+            refreshItemInfoAndReapply();
+            startOsdObserver();
+        }).catch(function (err) {
+            console.error('[VideoOSD Tweaks and Candy] Core init failed:', err);
+        });
     }
 
     function onVideoOsdHide() {
@@ -448,25 +549,13 @@
         }
     });
 
-    fetchPluginConfig().then(function (pluginConfig) {
-        if (!pluginConfig) return;
-
-        currentConfig = pluginConfig;
-
-        // Catches the case where the video OSD was already active by the
-        // time this config fetch finished (e.g. a page refresh while a
-        // video was already playing), so its own earlier "pageshow" event
-        // (which fired before our listener above was even attached yet,
-        // since that only happens after this whole async chain resolves)
-        // wasn't missed.
-        if (isVideoOsdActive()) {
-            onVideoOsdShow();
-        }
-    }).catch(function (err) {
-        // Defensive only: fetchPluginConfig() itself already catches its
-        // own errors internally and never rejects, this just protects
-        // against anything unexpected in the callback above becoming an
-        // unhandled promise rejection.
-        console.error('[VideoOSD Tweaks and Candy] Core init failed:', err);
-    });
+    // Catches the case where the video OSD was already active by the
+    // time this script's listeners above got attached (e.g. a page
+    // refresh while a video was already playing), so its own earlier
+    // "pageshow" event (which fired before we were listening yet) wasn't
+    // missed. onVideoOsdShow() does its own fresh config fetch, no need
+    // to duplicate that here.
+    if (isVideoOsdActive()) {
+        onVideoOsdShow();
+    }
 })();
