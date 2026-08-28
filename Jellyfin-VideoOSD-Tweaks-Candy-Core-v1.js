@@ -52,65 +52,6 @@
     }
 
     // ============================================================
-    // SHARED HIDE MECHANISM
-    // ============================================================
-    const FORCE_HIDE_CLASS = 'jvosd-tc-force-hide';
-    const STYLE_ID = 'jvosd-tc-core-style';
-
-    function ensureCoreStyle() {
-        if (document.getElementById(STYLE_ID)) return;
-        const style = document.createElement('style');
-        style.id = STYLE_ID;
-        style.textContent = `.${FORCE_HIDE_CLASS} { display: none !important; }`;
-        document.head.appendChild(style);
-    }
-
-    function setHidden(selector, hidden) {
-        document.querySelectorAll(selector).forEach(function (el) {
-            el.classList.toggle(FORCE_HIDE_CLASS, !!hidden);
-        });
-    }
-
-    function isVideoOsdActive() {
-        const page = document.querySelector('#videoOsdPage');
-        return !!page && !page.classList.contains('hide');
-    }
-
-    // ============================================================
-    // VANILLA HIDE/SHOW -- elements fully contained within the video OSD
-    // page itself. No OSD-active gating needed here.
-    // ============================================================
-    function applyOsdInternalHides(config) {
-        setHidden('.btnPause', config.HidePlayPauseButton);
-        setHidden('.btnRewind, .btnFastForward', config.HideRewindFastForward);
-        setHidden('.btnPreviousChapter, .btnNextChapter', config.HideChapterButtons);
-        setHidden('.btnPreviousTrack, .btnNextTrack', config.HideTrackButtons);
-        setHidden('.btnRecord', config.HideRecordButton);
-        setHidden('.osdTimeText', config.HideEndsAtInfo);
-
-        setHidden('.btnUserRating', config.HideFavoriteButton);
-        setHidden('.btnSubtitles', config.HideSubtitlesButton);
-        setHidden('.btnAudio', config.HideAudioButton);
-        setHidden('.buttonMute', config.HideMuteButton);
-        setHidden('.osdVolumeSliderContainer', config.HideVolumeSlider);
-        setHidden('.btnVideoOsdSettings', config.HideSettingsButton);
-        setHidden('.btnPip', config.HidePictureInPictureButton);
-        setHidden('.btnFullscreen', config.HideFullscreenButton);
-        setHidden('.btnAirPlay', config.HideAirPlayButton);
-    }
-
-    // ============================================================
-    // VANILLA HIDE/SHOW -- shared GLOBAL header elements. Must be gated to
-    // isVideoOsdActive(), the header is reused site-wide.
-    // ============================================================
-    function applyHeaderButtonHides(config) {
-        const active = isVideoOsdActive();
-        setHidden('.headerBackButton', active && config.HideBackButton);
-        setHidden('.headerSyncButton', active && config.HideSyncPlayButton);
-        setHidden('.headerCastButton', active && config.HideCastButton);
-    }
-
-    // ============================================================
     // TITLE RECONSTRUCTION
     // ============================================================
     const TITLE_ID = 'pageTitle';
@@ -230,12 +171,13 @@
 
         if (!rawText) return;
 
-        if (config.HideTitleBar) {
-            el.classList.add(FORCE_HIDE_CLASS);
-            return;
-        }
-        el.classList.remove(FORCE_HIDE_CLASS);
-
+        // HideTitleBar itself is now handled entirely by server-side CSS
+        // (see Plugin.cs's BuildDynamicCss(), the ":has()"-scoped rule for
+        // ".pageTitle"), this used to also short-circuit here in JS, now
+        // genuinely redundant, removed. The reconstruction below still
+        // runs even when the title bar is hidden, harmless (a handful of
+        // span elements, invisible either way), simpler than threading a
+        // special case through here for no real benefit.
         const parsed = parseTitleSync(rawText);
         const kind = itemInfo?.kind || (parsed.kind === 'episode' ? 'episode' : null);
 
@@ -286,93 +228,6 @@
     }
 
     // ============================================================
-    // ZONE ORDERING
-    // ============================================================
-    function applyOrder(container, orderCsv, idAttr) {
-        if (!container || typeof orderCsv !== 'string' || !orderCsv) return;
-        const order = orderCsv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-        if (!order.length) return;
-
-        // Processed in reverse, each moved to the very front via
-        // insertBefore(firstChild): after all of them run, the elements
-        // end up in exactly the specified order at the start of the
-        // container, with anything not listed pushed after them in its
-        // own natural remaining order. Deliberately consistent with
-        // CustomOnOff-Menu's own "listed items first in the specified
-        // order, unlisted appended after" fallback for the exact same
-        // "partial custom order" situation, not the opposite (an earlier
-        // version of this function pushed listed items to the END
-        // instead, which was inconsistent with that and has been
-        // corrected).
-        order.slice().reverse().forEach(function (id) {
-            const el = container.querySelector('[' + idAttr + '="' + CSS.escape(id) + '"]');
-            if (el) container.insertBefore(el, container.firstChild);
-        });
-    }
-
-    function applyTopRightOrder(config) {
-        const container = document.querySelector('.headerRight');
-        if (!container) return;
-        const sync = container.querySelector('.headerSyncButton');
-        const cast = container.querySelector('.headerCastButton');
-        if (sync) sync.setAttribute('data-jvosd-order-id', 'sync');
-        if (cast) cast.setAttribute('data-jvosd-order-id', 'cast');
-        applyOrder(container, config.TopRightOrder, 'data-jvosd-order-id');
-    }
-
-    function applyBottomLeftOrder(config) {
-        const container = document.querySelector('.videoOsdBottom .buttons.focuscontainer-x > div[dir="ltr"]');
-        if (!container) return;
-
-        const idMap = {
-            abloop: '#btnAbLoop',
-            speed: '.jfb-speed-step-container',
-            framebyframe: '.jfb-frame-step-container'
-        };
-        Object.keys(idMap).forEach(function (id) {
-            const el = container.querySelector(idMap[id]);
-            if (el) el.setAttribute('data-jvosd-order-id', id);
-        });
-        applyOrder(container, config.BottomLeftOrder, 'data-jvosd-order-id');
-    }
-
-    function applyBottomRightOrder(config) {
-        const favBtn = document.querySelector('.btnUserRating');
-        const container = favBtn?.parentNode;
-        if (!container) return;
-
-        const idMap = {
-            favorite: '.btnUserRating',
-            // Confirmed from the real InPlayerEpisodePreview source
-            // (a separate, third-party plugin many users have installed
-            // alongside this one): its button has a fixed id
-            // "popupPreviewButton" (not a class), and its own insertion
-            // logic (childBefore.after(...), where childBefore is the
-            // Favorite button) places it immediately after Favorite by
-            // default, confirmed directly from its own BaseTemplate code.
-            // Already gracefully handled if it's not actually installed:
-            // container.querySelector() below simply finds nothing and
-            // the loop skips it entirely, same as every other item here.
-            episodepreview: '#popupPreviewButton',
-            subtitles: '.btnSubtitles',
-            audio: '.btnAudio',
-            mute: '.buttonMute',
-            volumeslider: '.osdVolumeSliderContainer',
-            settings: '.btnVideoOsdSettings',
-            pip: '.btnPip',
-            fullscreen: '.btnFullscreen',
-            airplay: '.btnAirPlay',
-            download: '.btnDownload',
-            screenshot: '.btnScreenshot'
-        };
-        Object.keys(idMap).forEach(function (id) {
-            const el = container.querySelector(idMap[id]);
-            if (el) el.setAttribute('data-jvosd-order-id', id);
-        });
-        applyOrder(container, config.BottomRightOrder, 'data-jvosd-order-id');
-    }
-
-    // ============================================================
     // ORCHESTRATION
     // ============================================================
     let currentConfig = null;
@@ -380,13 +235,11 @@
 
     function applyAll() {
         if (!currentConfig) return;
-        ensureCoreStyle();
-        applyOsdInternalHides(currentConfig);
-        applyHeaderButtonHides(currentConfig);
+        // Hide/reorder for buttons and header elements moved to
+        // server-side CSS entirely (see Plugin.cs's BuildDynamicCss()),
+        // only the title text reconstruction genuinely needs JavaScript,
+        // it's substrings inside one string, not separate elements.
         applyTitleDisplay(currentConfig, currentItemInfo);
-        applyTopRightOrder(currentConfig);
-        applyBottomLeftOrder(currentConfig);
-        applyBottomRightOrder(currentConfig);
     }
 
     async function refreshItemInfoAndReapply() {
@@ -412,5 +265,12 @@
 
         applyAll();
         refreshItemInfoAndReapply();
+    }).catch(function (err) {
+        // Defensive only: fetchPluginConfig() itself already catches its
+        // own errors internally and never rejects, this just protects
+        // against anything unexpected in the callback above becoming an
+        // unhandled promise rejection, cheap insurance, not expected to
+        // ever actually fire in practice.
+        console.error('[VideoOSD Tweaks and Candy] Core init failed:', err);
     });
 })();
