@@ -19,15 +19,36 @@
 
     const PLUGIN_GUID = '468b1980-7a6c-4e45-a129-24825085ece4';
 
+    // FIX for a real bug found live: Jellyfin is a single-page app, this
+    // script's <script defer> tag runs once, at the very first index.html
+    // parse, which can easily happen BEFORE Jellyfin's own window.ApiClient
+    // global has finished initializing. The original version below gave up
+    // permanently on the very first failed attempt (no retry at all), so
+    // if that first attempt lost the race against ApiClient's own startup,
+    // currentConfig stayed null for the rest of the whole browser session,
+    // and applyAll() never ran again, even long after ApiClient became
+    // available (e.g. once the user actually started a video minutes
+    // later). This matches exactly what was observed live: script loads
+    // fine, CustomOnOff-Menu still works (independent logic, no config
+    // fetch of its own), but every hide/reorder feature (which only this
+    // Core script implements) never does anything at all. Retries every
+    // 250ms for up to 30 seconds, generous enough for a slow app
+    // bootstrap, not literally forever in case something else is wrong.
     async function fetchPluginConfig() {
-        if (!window.ApiClient || typeof ApiClient.getPluginConfiguration !== 'function') {
-            return null;
+        const maxAttempts = 120;
+        const delayMs = 250;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            if (window.ApiClient && typeof ApiClient.getPluginConfiguration === 'function') {
+                try {
+                    const config = await ApiClient.getPluginConfiguration(PLUGIN_GUID);
+                    if (config) return config;
+                } catch (err) {
+                    // fall through, try again after the delay below
+                }
+            }
+            await new Promise(function (resolve) { setTimeout(resolve, delayMs); });
         }
-        try {
-            return await ApiClient.getPluginConfiguration(PLUGIN_GUID);
-        } catch (err) {
-            return null;
-        }
+        return null;
     }
 
     // ============================================================
