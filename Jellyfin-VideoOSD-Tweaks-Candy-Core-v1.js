@@ -93,38 +93,31 @@
         // confirmed with an actual measured pixel gap (not just "should
         // work" -- 19.3px measured directly via a real headless browser
         // render before shipping this).
-        // FIX for a real, confirmed bug found live: applyBottomRightOrder()
-        // deliberately extracts .buttonMute and .osdVolumeSliderContainer
-        // out of their shared ".volumeButtons" wrapper so both can be
-        // sorted independently, but the wrapper wasn't just a grouping
-        // element -- it was a CSS containment context. Confirmed against
-        // the real source (src/styles/videoosd.scss, 10.10):
-        //   .osdVolumeSliderContainer { width: 9em; flex-grow: 1; }
-        // Inside the tiny ".volumeButtons" flex wrapper "flex-grow: 1"
-        // had almost no free space to claim, so the slider stayed ~9em.
-        // As a direct child of the big ".buttons" flex row it suddenly
-        // claims ALL free space of the entire bar, stretching across the
-        // full width -- confirmed live by the user's screenshot. The
-        // first rule below neutralizes flex-grow ONLY in the extracted
-        // state (direct-child selector: vanilla keeps the slider nested
-        // inside .volumeButtons, where this selector can never match),
-        // and gives the slider the same 0.29em side spacing every
-        // paper-icon-button-light neighbor carries.
-        // The wrapper also carried the narrow-window auto-hide
-        // (real source: "@media all and (max-width: 43em)
-        // { .videoOsdBottom .volumeButtons { display: none !important } }").
-        // Once extracted, mute and slider would wrongly stay visible on
-        // narrow windows; the media rule below re-applies that same
-        // behavior to both extracted elements, again via direct-child
-        // selectors so vanilla stays untouched.
+        // HISTORICAL NOTE (superseded, kept short): an interim version
+        // of applyBottomRightOrder() extracted mute and the slider
+        // container out of ".volumeButtons" and this style had to
+        // re-build the wrapper's lost CSS containment (flex-grow
+        // neutralization plus the native 43em narrow-window hide,
+        // both derived from the real videoosd.scss). Both rules are
+        // deliberately gone again since the order-model redesign:
+        // The volume complex needs almost no CSS anymore since the
+        // order-model redesign of applyBottomRightOrder(): the slider
+        // stays inside its native ".volumeButtons" wrapper, so the
+        // native flex-grow containment and the native 43em
+        // narrow-window hide simply keep applying by themselves -- the
+        // former compensation rules that re-built both for the
+        // extracted state are deliberately removed again. The single
+        // remaining rule below replaces the wrapper's native
+        // asymmetric margin ("0 1em 0 0.29em", designed for its one
+        // fixed vanilla position) with the uniform 0.29em every
+        // button-sized neighbor carries, so the wrapper spaces
+        // consistently at ANY sorted position. Direct-child selector
+        // on purpose: it only ever matches this exact wrapper in this
+        // exact bar.
         style.textContent = `.${FORCE_HIDE_CLASS} { display: none !important; }
 .jvosd-tc-title-sep { margin: 0 0.35em; }
 .jvosd-tc-title-year-sep { margin-left: 0.35em; }
-.videoOsdBottom .buttons > .osdVolumeSliderContainer { flex-grow: 0; margin: 0 0.29em; }
-@media all and (max-width: 43em) {
-    .videoOsdBottom .buttons > .buttonMute,
-    .videoOsdBottom .buttons > .osdVolumeSliderContainer { display: none !important; }
-}`;
+.videoOsdBottom .buttons > .volumeButtons { margin: 0 0.29em; }`;
         document.head.appendChild(style);
     }
 
@@ -714,18 +707,87 @@
         });
     }
 
+    // COMPLETE REDESIGN of this zone's sorting (user-approved after the
+    // volume slider incident), away from DOM moves onto pure flexbox
+    // "order":
+    // Root cause that forced this: Jellyfin's emby-slider custom element
+    // is NOT move-safe. Confirmed directly from the real source
+    // (src/elements/emby-slider/emby-slider.js): its detachedCallback
+    // nulls this.backgroundLower/backgroundUpper (the refs behind the
+    // blue track fill), and its attachedCallback returns early on
+    // re-attach (guarded by data-embyslider="true") WITHOUT restoring
+    // them -- and any insertBefore() on an attached node is technically
+    // "detach, then re-attach". One single sort-move of the slider
+    // therefore froze the blue fill forever, confirmed live by the
+    // user. Patching the refs back was explicitly rejected by the user
+    // ("kein Draufflicken"); the clean solution is to never move
+    // ANYTHING in this zone: ".videoOsdBottom .buttons" is a flex
+    // container, and the CSS "order" property changes the VISUAL
+    // sequence of flex siblings without any element ever leaving the
+    // DOM. No detach, no lost context, nothing to compensate.
+    // Consequences, all deliberate:
+    // - ".volumeButtons" is NOT dissolved anymore. The slider stays
+    //   untouched in its native wrapper (native flex-grow containment,
+    //   native 43em narrow-window hide, native hide-mouse-idle-tv all
+    //   just keep working); the WRAPPER itself is the sortable
+    //   representative for "volumeslider". The former compensation CSS
+    //   in ensureCoreStyle() (flex-grow: 0, re-built 43em hide) is
+    //   removed again -- with the native context intact there is
+    //   nothing left to compensate. Only a uniform 0.29em side margin
+    //   replaces the wrapper's native asymmetric "0 1em 0 0.29em",
+    //   which was designed for its one fixed vanilla position and
+    //   would look lopsided at arbitrary sorted positions.
+    // - Only .buttonMute still leaves the wrapper, ONCE, so it stays
+    //   independently sortable. Plain emby buttons are proven
+    //   move-safe (their attachedCallback re-binds on every re-attach,
+    //   verified against emby-ratingbutton/emby-button source). It gets
+    //   hide-mouse-idle-tv re-applied since that lived on the wrapper.
+    // - Untagged siblings (the left transport group and ".osdTimeText")
+    //   keep the flex default order 0 and therefore always render
+    //   BEFORE everything we number from 1 upward: the "Ends at" spacer
+    //   stays first without needing any anchor logic at all.
+    // - Known edge, documented on purpose: a FOREIGN element some other
+    //   plugin appends to this container also has order 0 and would
+    //   visually line up before our numbered items; not touched here
+    //   because blanket-styling unknown elements is worse.
+    // - Known, openly stated trade-off (user accepted): keyboard Tab
+    //   order follows the DOM, i.e. the vanilla sequence, not the
+    //   sorted visual sequence.
+    // - Loop safety: style.order writes are attribute mutations, which
+    //   this script's own osdObserver ignores (attributeFilter:
+    //   ['class']) and the addon scripts' childList observers never
+    //   see; all writes below are additionally change-guarded, so a
+    //   settled state produces zero mutations.
     function applyBottomRightOrder(config) {
         const favBtn = document.querySelector('.btnUserRating');
         const container = favBtn?.parentNode;
         if (!container) return;
 
+        // Mute moves out of the wrapper exactly once (guarded: only
+        // while it still sits inside), gaining independent sortability;
+        // the wrapper-provided TV auto-hide is re-applied directly.
+        const wrapper = container.querySelector('.volumeButtons');
+        if (wrapper) {
+            const muteInWrapper = wrapper.querySelector('.buttonMute');
+            if (muteInWrapper) {
+                wrapper.insertAdjacentElement('afterend', muteInWrapper);
+            }
+        }
+        const mute = container.querySelector('.buttonMute');
+        if (mute && !mute.classList.contains('hide-mouse-idle-tv')) mute.classList.add('hide-mouse-idle-tv');
+
+        // "volumeslider" resolves to the native wrapper when present.
+        // The fallback to the bare slider container only exists for a
+        // transitional SPA session in which an OLDER core version
+        // already dissolved the wrapper before this version loaded; on
+        // any fresh page load the wrapper always exists.
         const idMap = {
             favorite: '.btnUserRating',
             episodepreview: '#popupPreviewButton',
             subtitles: '.btnSubtitles',
             audio: '.btnAudio',
             mute: '.buttonMute',
-            volumeslider: '.osdVolumeSliderContainer',
+            volumeslider: '.volumeButtons, .osdVolumeSliderContainer',
             settings: '.btnVideoOsdSettings',
             pip: '.btnPip',
             fullscreen: '.btnFullscreen',
@@ -733,81 +795,24 @@
             download: '.btnDownload',
             screenshot: '.btnScreenshot'
         };
-        Object.keys(idMap).forEach(function (id) {
-            const el = container.querySelector(idMap[id]);
-            if (el && el.getAttribute('data-jvosd-order-id') !== id) el.setAttribute('data-jvosd-order-id', id);
-        });
 
-        // FIX for a real, confirmed bug found live: .buttonMute and
-        // .osdVolumeSliderContainer sit nested inside their own shared
-        // wrapper (confirmed from the real source: a ".volumeButtons"
-        // div contains both), not as direct children of this container.
-        // Reordering them via container.insertBefore() (which any actual
-        // repositioning below would do) would silently rip them straight
-        // out of that wrapper, leaving it empty. Per the user's own
-        // correct observation, Hide already treats these two completely
-        // independently (each has its own separate toggle), so Sort
-        // should too, not be artificially restricted to move them only
-        // as a pair. ".volumeButtons" carries "hide-mouse-idle-tv"
-        // (confirmed from the real source: hides the group on
-        // TV-idle-mouse), which lives on the WRAPPER, not on either
-        // child individually, so extracting them loses that behavior
-        // unless it's re-applied directly to each -- done here,
-        // unconditionally, before any reordering happens, so sorting
-        // these two anywhere else (with other items between them, or
-        // relative to each other) fully works while this TV-specific
-        // auto-hide still applies to each of them on its own.
-        const mute = container.querySelector('.buttonMute');
-        const volumeSlider = container.querySelector('.osdVolumeSliderContainer');
-        if (mute && !mute.classList.contains('hide-mouse-idle-tv')) mute.classList.add('hide-mouse-idle-tv');
-        if (volumeSlider && !volumeSlider.classList.contains('hide-mouse-idle-tv')) volumeSlider.classList.add('hide-mouse-idle-tv');
-
-        // FIX for a real, serious bug found live, confirmed via an
-        // actual MutationObserver instrumentation: once mute/slider get
-        // pulled out of ".volumeButtons" (immediately below, or on any
-        // earlier pass), the now-empty wrapper div was left behind,
-        // sitting in the DOM as an untagged leftover. Every subsequent
-        // applyOrder() call's own "is this already correct" position
-        // check walked right past this leftover empty div without
-        // accounting for it, so it could never actually confirm a
-        // stable, settled state, meaning it kept re-running its full
-        // reordering logic on literally every single observer tick,
-        // and each of THOSE reordering passes is itself a real DOM
-        // mutation, feeding right back into triggering the observer
-        // again -- an unbroken, self-sustaining loop, confirmed live:
-        // over 500 observer firings and still climbing before this fix.
-        const oldWrapper = document.querySelector('.volumeButtons');
-        if (oldWrapper && !oldWrapper.children.length) {
-            oldWrapper.remove();
-        }
-
-        // FIX, same class of issue as applyBottomLeftOrder() above: 3 of
-        // these 12 items (download, screenshot, episodepreview) are
-        // dynamically inserted by their own separate scripts (or a
-        // separate third-party plugin, for episodepreview), so their
-        // position relative to each other is a similar race with nothing
-        // configured. The other 9 are native, fixed-position elements not
-        // affected by this, but for consistency, this zone gets the same
-        // kind of sensible default fallback, matching this project's own
-        // established default listing order.
+        // Same sensible default fallback as before: 3 of the 12 items
+        // (download, screenshot, episodepreview) are dynamically
+        // inserted by separate scripts, so with nothing configured
+        // their raw insertion order would be a race.
         const orderCsv = (typeof config.BottomRightOrder === 'string' && config.BottomRightOrder)
             ? config.BottomRightOrder
             : 'screenshot,download,favorite,episodepreview,subtitles,audio,mute,volumeslider,settings,airplay,pip,fullscreen';
+        const order = orderCsv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
 
-        // FIX for a real bug found live: ".osdTimeText" ("Ends At") is an
-        // untagged sibling in this exact same container (confirmed from
-        // the real source), not part of any order list, but without an
-        // anchor, applyOrder() would move any of the 12 tagged items
-        // ahead of it, confirmed live via an actual test: it ended up
-        // displaced to position 3 instead of staying first. Beyond just
-        // looking wrong, this breaks its own "margin-right: auto" flex
-        // spacer role (see applyOsdInternalHides()'s own comment on
-        // HideEndsAtInfo) if its position shifts. Anchored the same way
-        // Bottom-Left's native buttons are: everything in this order
-        // list is positioned after it, its own place stays untouched.
-        const anchor = container.querySelector('.osdTimeText');
-
-        applyOrder(container, orderCsv, 'data-jvosd-order-id', anchor);
+        Object.keys(idMap).forEach(function (id) {
+            const el = container.querySelector(idMap[id]);
+            if (!el) return;
+            if (el.getAttribute('data-jvosd-order-id') !== id) el.setAttribute('data-jvosd-order-id', id);
+            const idx = order.indexOf(id);
+            const val = idx === -1 ? '' : String(idx + 1);
+            if (el.style.order !== val) el.style.order = val;
+        });
     }
 
     // ============================================================
