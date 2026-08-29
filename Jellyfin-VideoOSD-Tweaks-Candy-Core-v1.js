@@ -869,7 +869,65 @@
         osdObserver = null;
     }
 
+    // CONFIG CACHE for instant, pre-paint layout (user-approved after
+    // theory check and simulation): the fresh fetch below is a network
+    // round trip that resolves in a LATER task, so between the page's
+    // first paint and that resolution the user briefly saw the vanilla
+    // arrangement re-shuffle into the configured one. The cache removes
+    // that window: Jellyfin makes the page visible and dispatches
+    // 'pageshow' within one synchronous chain (verified in the real
+    // source: viewContainer.js "classList.remove('hide')" ->
+    // viewManager.js "dispatchEvent('pageshow')"), and browsers only
+    // paint after the current task INCLUDING its microtasks has fully
+    // drained -- so everything applied synchronously inside the
+    // pageshow handler is guaranteed on screen from the very first
+    // painted frame. Pattern: stale-while-revalidate. The cached copy
+    // is applied instantly, the live fetch (unchanged, still every
+    // video start) refreshes the cache and re-applies; since every
+    // write in applyAll() is change-guarded, an identical fresh config
+    // causes zero mutations. Known, accepted trade-off: the first
+    // video right after an admin-panel change briefly shows the
+    // previously cached arrangement, then corrects; the very next
+    // video is instant again (cache self-heals because the fetch runs
+    // per video start). All storage access is try/catch-guarded:
+    // without usable localStorage (or with a corrupted entry) behavior
+    // degrades exactly to the previous fetch-only flow, never worse.
+    // Plugin config is server-wide (not per-user) and localStorage is
+    // per-origin (per server), so a shared cache is always
+    // content-correct.
+    const CONFIG_CACHE_KEY = 'jvosd-tc-config-cache';
+
+    function readCachedConfig() {
+        try {
+            const raw = localStorage.getItem(CONFIG_CACHE_KEY);
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function writeCachedConfig(cfg) {
+        try {
+            localStorage.setItem(CONFIG_CACHE_KEY, JSON.stringify(cfg));
+        } catch (e) {
+            /* storage unavailable or full: degrade to fetch-only */
+        }
+    }
+
     function onVideoOsdShow() {
+        // Synchronous cache pass FIRST: runs to completion inside the
+        // pageshow dispatch, i.e. before the first paint (see the
+        // comment block above). applyAll() deliberately depends on
+        // nothing asynchronous (verified: no ApiClient usage), and
+        // startOsdObserver() is idempotent, so the fetch path below
+        // calling both again is harmless.
+        const cached = readCachedConfig();
+        if (cached) {
+            currentConfig = cached;
+            applyAll();
+            startOsdObserver();
+        }
+
         // FIX for a real gap found live: this used to just reuse
         // currentConfig, which was only ever fetched ONCE at the very
         // first script load. If the admin changed a Hide/reorder setting
@@ -880,9 +938,11 @@
         // becomes active fixes this: fetchPluginConfig() resolves nearly
         // immediately once window.ApiClient exists (which it always does
         // by this point, well after initial page load), so this adds no
-        // meaningful delay in the common case.
+        // meaningful delay in the common case. It doubles as the cache
+        // refresh for the mechanism above.
         fetchPluginConfig().then(function (pluginConfig) {
             if (!pluginConfig) return;
+            writeCachedConfig(pluginConfig);
             currentConfig = pluginConfig;
             applyAll();
             refreshItemInfoAndReapply();
