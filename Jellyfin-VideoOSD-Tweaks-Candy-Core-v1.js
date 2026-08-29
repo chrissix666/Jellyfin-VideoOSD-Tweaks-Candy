@@ -93,9 +93,38 @@
         // confirmed with an actual measured pixel gap (not just "should
         // work" -- 19.3px measured directly via a real headless browser
         // render before shipping this).
+        // FIX for a real, confirmed bug found live: applyBottomRightOrder()
+        // deliberately extracts .buttonMute and .osdVolumeSliderContainer
+        // out of their shared ".volumeButtons" wrapper so both can be
+        // sorted independently, but the wrapper wasn't just a grouping
+        // element -- it was a CSS containment context. Confirmed against
+        // the real source (src/styles/videoosd.scss, 10.10):
+        //   .osdVolumeSliderContainer { width: 9em; flex-grow: 1; }
+        // Inside the tiny ".volumeButtons" flex wrapper "flex-grow: 1"
+        // had almost no free space to claim, so the slider stayed ~9em.
+        // As a direct child of the big ".buttons" flex row it suddenly
+        // claims ALL free space of the entire bar, stretching across the
+        // full width -- confirmed live by the user's screenshot. The
+        // first rule below neutralizes flex-grow ONLY in the extracted
+        // state (direct-child selector: vanilla keeps the slider nested
+        // inside .volumeButtons, where this selector can never match),
+        // and gives the slider the same 0.29em side spacing every
+        // paper-icon-button-light neighbor carries.
+        // The wrapper also carried the narrow-window auto-hide
+        // (real source: "@media all and (max-width: 43em)
+        // { .videoOsdBottom .volumeButtons { display: none !important } }").
+        // Once extracted, mute and slider would wrongly stay visible on
+        // narrow windows; the media rule below re-applies that same
+        // behavior to both extracted elements, again via direct-child
+        // selectors so vanilla stays untouched.
         style.textContent = `.${FORCE_HIDE_CLASS} { display: none !important; }
 .jvosd-tc-title-sep { margin: 0 0.35em; }
-.jvosd-tc-title-year-sep { margin-left: 0.35em; }`;
+.jvosd-tc-title-year-sep { margin-left: 0.35em; }
+.videoOsdBottom .buttons > .osdVolumeSliderContainer { flex-grow: 0; margin: 0 0.29em; }
+@media all and (max-width: 43em) {
+    .videoOsdBottom .buttons > .buttonMute,
+    .videoOsdBottom .buttons > .osdVolumeSliderContainer { display: none !important; }
+}`;
         document.head.appendChild(style);
     }
 
@@ -592,6 +621,97 @@
         const anchor = container.querySelector('.btnNextTrack') || container.querySelector('.btnFastForward');
 
         applyOrder(container, orderCsv, 'data-jvosd-order-id', anchor);
+
+        applyCustomGapSpacing(container, config);
+    }
+
+    // Per the user's explicit spec, the configured Centered Gap must
+    // behave "like the vanilla icons": vanilla spacing is uniform
+    // because every native button contributes the same 0.29em per side,
+    // so EVERY gap a custom addon participates in must grow by exactly
+    // 1x the configured value -- never 2x between two adjacent addons
+    // (which is what naive per-element-both-sides margins produce). That
+    // requires knowing the actual neighbor, and only this script knows
+    // the final order after sorting, so gap application lives HERE, not
+    // in the three addon scripts (their own applySpacing() functions now
+    // only set the native 0.29em baseline; standalone without the
+    // plugin the gap feature doesn't exist anyway). Re-runs on every
+    // applyAll() pass, so any reordering immediately re-derives the
+    // sides.
+    // Ownership rule per addon (Variant 2, the user's final decision,
+    // confirmed against two reviewed sketches): its RIGHT side carries
+    // the gap only when a right-hand element actually follows in this
+    // same container -- the trailing edge of whichever custom happens
+    // to be last stays at the native baseline, so the "Ends at" text
+    // keeps Jellyfin's own native distance (its 1em margin-left plus
+    // our 0.29em base = the native 1.29em) at EVERY configured gap
+    // value instead of drifting right with it. Should anything ever be
+    // placed after our customs later (a fourth addon, a foreign
+    // plugin's button), a right-hand neighbor then exists and that gap
+    // starts applying again all by itself. Its LEFT side carries the
+    // gap only when the left-hand neighbor is NOT one of our own
+    // addons -- if it is, that neighbor's right side already paid for
+    // this exact gap. Result: vanilla|addon, addon|vanilla and
+    // addon|addon all grow by exactly 1x, never 2x, and the group's
+    // outer boundary stays native.
+    // ABLoop is a bare button (its 0.29em native baseline lives in its
+    // own margins, so the gap is ADDED to 0.29), while Speed/Frame are
+    // fixed-width containers whose 0.29em baseline overflows from the
+    // inner buttons (so their container margin carries ONLY the gap,
+    // cleared entirely at 0). Margins are set conditionally (only on a
+    // real change): inline style writes fire MutationObservers even
+    // for identical values, and although this script's own osdObserver
+    // filters on class attributes only, the addon scripts' own
+    // observers watch childList on document.body -- conditional writes
+    // keep every pass mutation-free once settled, same lesson as the
+    // tagging setAttribute() fix above.
+    function applyCustomGapSpacing(container, config) {
+        const NATIVE_EM = 0.29;
+
+        function effectiveGap(flagKey, valueKey) {
+            return config[flagKey]
+                ? (Number(config[valueKey]) || 0)
+                : (Number(config.GeneralCenteredGap) || 0);
+        }
+
+        const items = [
+            {
+                el: container.querySelector('#btnAbLoop'),
+                gap: effectiveGap('ABLoopIndividualCenteredGapOverride', 'ABLoopCenteredGapValue'),
+                bareButton: true
+            },
+            {
+                el: container.querySelector('.jfb-speed-step-container'),
+                gap: effectiveGap('SpeedIndividualCenteredGapOverride', 'SpeedCenteredGapValue'),
+                bareButton: false
+            },
+            {
+                el: container.querySelector('.jfb-frame-step-container'),
+                gap: effectiveGap('FrameByFrameIndividualCenteredGapOverride', 'FrameByFrameCenteredGapValue'),
+                bareButton: false
+            }
+        ].filter(function (i) { return !!i.el; });
+        if (!items.length) return;
+
+        const customEls = items.map(function (i) { return i.el; });
+
+        items.forEach(function (i) {
+            const prev = i.el.previousElementSibling;
+            const next = i.el.nextElementSibling;
+            const leftExtra = (prev && customEls.indexOf(prev) === -1) ? i.gap : 0;
+            const rightExtra = next ? i.gap : 0;
+
+            let ml, mr;
+            if (i.bareButton) {
+                ml = (NATIVE_EM + leftExtra) + 'em';
+                mr = (NATIVE_EM + rightExtra) + 'em';
+            } else {
+                ml = leftExtra > 0 ? leftExtra + 'em' : '';
+                mr = rightExtra > 0 ? rightExtra + 'em' : '';
+            }
+            if (i.el.style.marginLeft !== ml) i.el.style.marginLeft = ml;
+            if (i.el.style.marginRight !== mr) i.el.style.marginRight = mr;
+        });
     }
 
     function applyBottomRightOrder(config) {
