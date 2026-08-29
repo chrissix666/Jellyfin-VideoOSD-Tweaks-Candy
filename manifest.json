@@ -1,0 +1,21 @@
+[
+    {
+        "guid": "468b1980-7a6c-4e45-a129-24825085ece4",
+        "name": "VideoOSD Tweaks and Candy",
+        "description": "VideoOSD Tweaks and Candy turns the Jellyfin video player OSD into your personal control center. Hide or reorder any vanilla OSD element across all four zones independently, full freedom over every detail. Eight optional addons extend the OSD with features you know from VLC and beyond: a Custom On/Off Menu for quick in-playback switching, Playback Speed Buttons and a Speed Menu with your own custom speed values directly in the OSD, Frame-by-Frame Buttons, a Download Button, a Screenshot Button, and an A-B Loop Button. And then there is the Candy: Artwork Display upgrades the OSD to a whole new level, fully configurable down to the smallest detail with logos, clearart, discs, posters, banners, thumbs, and backdrops, each artwork type separately configurable for movies, episodes, and videos. All addons are optional and configurable through the Jellyfin admin dashboard.",
+        "overview": "Your Jellyfin video OSD, fully in your hands. Hide and reorder vanilla controls, add powerful new ones. Tweaks and Candy included.",
+        "owner": "chrissix666",
+        "category": "General",
+        "imageUrl": "https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-Tweaks-Candy/main/logo.png",
+        "versions": [
+            {
+                "version": "1.0.0.0",
+                "targetAbi": "10.10.0.0",
+                "sourceUrl": "https://github.com/chrissix666/Jellyfin-VideoOSD-Tweaks-Candy/releases/download/v1.0.0.0/VideoOSD.Tweaks.Candy_1.0.0.0.zip",
+                "checksum": "968545dc57bc07ecd0bfa6d4c7112ca3",
+                "timestamp": "2026-08-29T00:00:00Z",
+                "changelog": "Initial release."
+            }
+        ]
+    }
+]
