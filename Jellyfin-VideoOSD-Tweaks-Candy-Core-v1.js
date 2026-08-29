@@ -309,11 +309,49 @@
             return;
         }
 
+        // Original, correct logic, restored: el.textContent right now is
+        // EITHER Jellyfin's own fresh text (if it just re-set the title)
+        // OR our own previously-rebuilt span structure's concatenated
+        // text (if nothing has re-set it since our last render) -- the
+        // marker distinguishes which case this is, since parsing our own
+        // already-rebuilt output as if it were fresh raw text would be
+        // wrong.
         const rawText = el.getAttribute(RAW_TEXT_MARKER_ATTR) === el.textContent
             ? el.dataset.jvosdTcSourceText
             : el.textContent;
 
         if (!rawText) return;
+
+        // FIX, a real efficiency gap the user asked about directly:
+        // confirmed against the real source that Jellyfin's own
+        // time-display update runs (throttled) roughly every 700ms
+        // during active playback and touches innerHTML, which this
+        // script's osdObserver (childList: true) does pick up, so this
+        // function used to unconditionally rebuild the title's span
+        // structure on every one of those ticks even when nothing about
+        // the title itself had changed, roughly 1-2 times per second of
+        // pure wasted work.
+        //
+        // A first attempt at this reused RAW_TEXT_MARKER_ATTR directly
+        // for this new check too, which broke the distinction the block
+        // above depends on, caught before shipping it: comparing the
+        // marker against a NEW signature meant future calls could no
+        // longer tell "is el.textContent currently ours or Jellyfin's"
+        // correctly, since the marker's actual purpose had been
+        // repurposed. A separate cache field keeps the two concerns
+        // apart. It also needs to include itemInfo, not just rawText:
+        // itemInfo arrives ASYNCHRONOUSLY, after
+        // refreshItemInfoAndReapply()'s own separate call to applyAll(),
+        // so there's always a second call where rawText is identical to
+        // the first render (itemInfo was null then) but itemInfo itself
+        // has since become populated (kind, originalTitle) -- caching on
+        // rawText alone would have permanently locked in the
+        // pre-itemInfo render (e.g. movie original-title replacement
+        // silently never applying).
+        const itemInfoSignature = (itemInfo?.kind || '') + '\u0000' + (itemInfo?.originalTitle || '');
+        const renderSignature = rawText + '\u0001' + itemInfoSignature + '\u0001' + (config.HideTitleBar ? '1' : '0');
+        if (el.dataset.jvosdTcLastRenderSignature === renderSignature) return;
+        el.dataset.jvosdTcLastRenderSignature = renderSignature;
 
         if (config.HideTitleBar) {
             el.classList.add(FORCE_HIDE_CLASS);
@@ -380,33 +418,122 @@
     // the elements are ALREADY in the target order first, and doing
     // nothing at all if so, so a settled, correct order produces zero
     // further DOM mutations, breaking the feedback loop entirely.
-    function applyOrder(container, orderCsv, idAttr) {
+    // FIX for a real, fundamental design flaw found live: this always
+    // moved the tagged items to the ABSOLUTE front of the container
+    // (container.firstChild). That's correct for zones where every
+    // single child is one of the tagged items (Top-Right: only sync/
+    // cast; Bottom-Right: all 12 items covered), but Bottom-Left's
+    // container ALSO holds 7 untagged NATIVE vanilla buttons
+    // (PreviousTrack/PreviousChapter/Rewind/Pause/FastForward/
+    // NextChapter/NextTrack) that are genuinely not part of any order
+    // list. Moving the 3 tagged custom mods to the absolute front
+    // pushed every one of those 7 native controls AFTER them instead,
+    // confirmed live via an actual test with a real native button
+    // present in the container. Fixed by accepting an optional anchor
+    // element: when given, items are inserted directly after that
+    // anchor (in the specified sequence) instead of at the container's
+    // own front, leaving anything before the anchor completely
+    // untouched.
+    function applyOrder(container, orderCsv, idAttr, anchor) {
         if (!container || typeof orderCsv !== 'string' || !orderCsv) return;
         const order = orderCsv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
         if (!order.length) return;
 
-        const targetFrontEls = order
+        const targetEls = order
             .map(function (id) { return container.querySelector('[' + idAttr + '="' + CSS.escape(id) + '"]'); })
             .filter(Boolean);
-        if (!targetFrontEls.length) return;
+        if (!targetEls.length) return;
 
-        const currentChildren = Array.prototype.slice.call(container.children);
-        const alreadyCorrect = targetFrontEls.every(function (el, idx) { return currentChildren[idx] === el; });
+        const validAnchor = (anchor && anchor.parentNode === container) ? anchor : null;
+
+        // FIX for a real, serious bug found live, confirmed via direct
+        // instrumentation: this used to walk EVERY sibling node
+        // (nextSibling), including plain whitespace TEXT nodes between
+        // tags (nodeType 3), not just elements. Real HTML almost always
+        // has such whitespace between tags, confirmed live: this threw
+        // the positional comparison off by however many text nodes were
+        // interspersed, so "already correct" could never actually match
+        // even when the elements themselves were already in exactly the
+        // right order, causing applyOrder() to endlessly re-run its
+        // reordering logic on every single observer tick, and each of
+        // THOSE reordering passes is itself a real mutation feeding
+        // right back into triggering the observer again -- confirmed
+        // live via an actual instrumented count: an unbroken,
+        // self-sustaining loop, over 500 firings and still climbing.
+        // Filtering to element nodes only (nodeType === 1) fixes this at
+        // the root.
+        const firstSlot = validAnchor ? validAnchor.nextSibling : container.firstChild;
+        const currentFromSlot = [];
+        for (let node = firstSlot; node; node = node.nextSibling) {
+            if (node.nodeType === 1) currentFromSlot.push(node);
+        }
+        const alreadyCorrect = targetEls.every(function (el, idx) { return currentFromSlot[idx] === el; });
         if (alreadyCorrect) return;
 
-        targetFrontEls.slice().reverse().forEach(function (el) {
-            container.insertBefore(el, container.firstChild);
+        // Reverse order, each one inserted right after the anchor (or at
+        // the container's front, with no anchor): re-evaluated fresh on
+        // every single iteration (NOT a value captured once up front),
+        // exactly so each insertion lands before whatever the PREVIOUS
+        // iteration just placed there, building up the correct final
+        // sequence one element at a time.
+        targetEls.slice().reverse().forEach(function (el) {
+            const insertBeforeNode = validAnchor ? validAnchor.nextSibling : container.firstChild;
+            container.insertBefore(el, insertBeforeNode);
         });
     }
 
+    // FIX for a real, confirmed issue found live, and simplified per the
+    // user's own correct observation: with only 2 possible items here,
+    // "reordering" is really just "swap or don't swap", nothing more.
+    // The old approach reused the generic applyOrder() (designed for
+    // zones with many items), which moves tagged items to the
+    // container's front -- fine when everything in the container is
+    // tagged, but ".headerRight" also holds several other untagged
+    // native elements between/around sync and cast (confirmed against
+    // the real source: headerSelectedPlayer, headerAudioPlayerButton,
+    // headerSearchButton, headerUserButton), so a custom order would
+    // have displaced those too. A direct swap between just these two
+    // elements, relative to EACH OTHER only, never touches anything
+    // else in the header at all.
     function applyTopRightOrder(config) {
         const container = document.querySelector('.headerRight');
         if (!container) return;
+
         const sync = container.querySelector('.headerSyncButton');
         const cast = container.querySelector('.headerCastButton');
-        if (sync) sync.setAttribute('data-jvosd-order-id', 'sync');
-        if (cast) cast.setAttribute('data-jvosd-order-id', 'cast');
-        applyOrder(container, config.TopRightOrder, 'data-jvosd-order-id');
+        if (!sync || !cast) return;
+
+        const orderCsv = config.TopRightOrder;
+        if (typeof orderCsv !== 'string' || !orderCsv) return;
+
+        const order = orderCsv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+        const castIdx = order.indexOf('cast');
+        const syncIdx = order.indexOf('sync');
+        if (castIdx === -1 || syncIdx === -1) return;
+        const wantCastFirst = castIdx < syncIdx;
+
+        const children = Array.prototype.slice.call(container.children);
+        const castCurrentlyFirst = children.indexOf(cast) < children.indexOf(sync);
+
+        if (wantCastFirst === castCurrentlyFirst) return;
+
+        // FIX for a real bug found live, confirmed via an actual DOM
+        // test: a plain "insertBefore(cast, sync)" doesn't swap two
+        // elements in place, it REMOVES cast from wherever it currently
+        // is and drops it in front of sync's CURRENT position -- if
+        // anything else (here: headerSelectedPlayer,
+        // headerAudioPlayerButton) sits BETWEEN sync and cast's original
+        // positions, that in-between content gets dragged along/
+        // displaced too, confirmed live: ended up after BOTH sync and
+        // cast instead of staying between them. A genuine swap captures
+        // each element's own original "next sibling" first, moves each
+        // element to sit right before the OTHER one's original next
+        // sibling, so anything that was originally between them lands
+        // exactly where it was, untouched.
+        const syncNext = sync.nextSibling;
+        const castNext = cast.nextSibling;
+        container.insertBefore(sync, castNext);
+        container.insertBefore(cast, syncNext);
     }
 
     function applyBottomLeftOrder(config) {
@@ -418,11 +545,53 @@
             speed: '.jfb-speed-step-container',
             framebyframe: '.jfb-frame-step-container'
         };
+        // FIX for a real, serious bug found live, confirmed via a
+        // direct, isolated test: setAttribute() fires a MutationObserver
+        // callback EVEN when set to the exact same value it already has
+        // (confirmed: an unconditional setAttribute() call, run on every
+        // single applyAll() pass regardless of whether anything actually
+        // needed to change, kept re-triggering this script's own
+        // osdObserver forever, a self-sustaining loop entirely
+        // independent of whether applyOrder() itself correctly detected
+        // "already correct" -- that check alone was not enough, this
+        // was the deeper, actual source). Only calling setAttribute()
+        // when the value would genuinely change breaks the cycle at its
+        // root.
         Object.keys(idMap).forEach(function (id) {
             const el = container.querySelector(idMap[id]);
-            if (el) el.setAttribute('data-jvosd-order-id', id);
+            if (el && el.getAttribute('data-jvosd-order-id') !== id) el.setAttribute('data-jvosd-order-id', id);
         });
-        applyOrder(container, config.BottomLeftOrder, 'data-jvosd-order-id');
+
+        // FIX for a real, confirmed issue found live: with no order
+        // configured, this fell through to whatever order the 2-3
+        // scripts happened to insert themselves in, which is a genuine
+        // race (each one's own observer inserts itself into this same
+        // container independently, so whichever completes first ends up
+        // wherever its own insertion logic puts it), not something
+        // guaranteed or stable run to run. TopLeftOrder already has
+        // exactly this kind of sensible default fallback
+        // (getEpisodeTitleOrder() above), BottomLeftOrder never did.
+        // Given the same default here, matching the order the user
+        // described as the expected standard. This default is applied
+        // through the same reliable, anchor-based applyOrder() logic
+        // below regardless of whatever the initial race produced, so
+        // it's correct independent of insertion timing either way.
+        const orderCsv = (typeof config.BottomLeftOrder === 'string' && config.BottomLeftOrder)
+            ? config.BottomLeftOrder
+            : 'abloop,speed,framebyframe';
+
+        // The anchor these 3 custom mods should be positioned after:
+        // confirmed from the real source and from ABLoop's own script,
+        // the last of the native vanilla playback controls in this same
+        // container (NextTrack, or FastForward if NextTrack isn't
+        // present). Without this, applyOrder() would move the 3 custom
+        // items to the absolute front of the WHOLE container, ahead of
+        // Play/Pause/Rewind/FastForward/chapter/track, which are also
+        // untagged children of this same container, not just the 3
+        // custom ones.
+        const anchor = container.querySelector('.btnNextTrack') || container.querySelector('.btnFastForward');
+
+        applyOrder(container, orderCsv, 'data-jvosd-order-id', anchor);
     }
 
     function applyBottomRightOrder(config) {
@@ -446,9 +615,79 @@
         };
         Object.keys(idMap).forEach(function (id) {
             const el = container.querySelector(idMap[id]);
-            if (el) el.setAttribute('data-jvosd-order-id', id);
+            if (el && el.getAttribute('data-jvosd-order-id') !== id) el.setAttribute('data-jvosd-order-id', id);
         });
-        applyOrder(container, config.BottomRightOrder, 'data-jvosd-order-id');
+
+        // FIX for a real, confirmed bug found live: .buttonMute and
+        // .osdVolumeSliderContainer sit nested inside their own shared
+        // wrapper (confirmed from the real source: a ".volumeButtons"
+        // div contains both), not as direct children of this container.
+        // Reordering them via container.insertBefore() (which any actual
+        // repositioning below would do) would silently rip them straight
+        // out of that wrapper, leaving it empty. Per the user's own
+        // correct observation, Hide already treats these two completely
+        // independently (each has its own separate toggle), so Sort
+        // should too, not be artificially restricted to move them only
+        // as a pair. ".volumeButtons" carries "hide-mouse-idle-tv"
+        // (confirmed from the real source: hides the group on
+        // TV-idle-mouse), which lives on the WRAPPER, not on either
+        // child individually, so extracting them loses that behavior
+        // unless it's re-applied directly to each -- done here,
+        // unconditionally, before any reordering happens, so sorting
+        // these two anywhere else (with other items between them, or
+        // relative to each other) fully works while this TV-specific
+        // auto-hide still applies to each of them on its own.
+        const mute = container.querySelector('.buttonMute');
+        const volumeSlider = container.querySelector('.osdVolumeSliderContainer');
+        if (mute && !mute.classList.contains('hide-mouse-idle-tv')) mute.classList.add('hide-mouse-idle-tv');
+        if (volumeSlider && !volumeSlider.classList.contains('hide-mouse-idle-tv')) volumeSlider.classList.add('hide-mouse-idle-tv');
+
+        // FIX for a real, serious bug found live, confirmed via an
+        // actual MutationObserver instrumentation: once mute/slider get
+        // pulled out of ".volumeButtons" (immediately below, or on any
+        // earlier pass), the now-empty wrapper div was left behind,
+        // sitting in the DOM as an untagged leftover. Every subsequent
+        // applyOrder() call's own "is this already correct" position
+        // check walked right past this leftover empty div without
+        // accounting for it, so it could never actually confirm a
+        // stable, settled state, meaning it kept re-running its full
+        // reordering logic on literally every single observer tick,
+        // and each of THOSE reordering passes is itself a real DOM
+        // mutation, feeding right back into triggering the observer
+        // again -- an unbroken, self-sustaining loop, confirmed live:
+        // over 500 observer firings and still climbing before this fix.
+        const oldWrapper = document.querySelector('.volumeButtons');
+        if (oldWrapper && !oldWrapper.children.length) {
+            oldWrapper.remove();
+        }
+
+        // FIX, same class of issue as applyBottomLeftOrder() above: 3 of
+        // these 12 items (download, screenshot, episodepreview) are
+        // dynamically inserted by their own separate scripts (or a
+        // separate third-party plugin, for episodepreview), so their
+        // position relative to each other is a similar race with nothing
+        // configured. The other 9 are native, fixed-position elements not
+        // affected by this, but for consistency, this zone gets the same
+        // kind of sensible default fallback, matching this project's own
+        // established default listing order.
+        const orderCsv = (typeof config.BottomRightOrder === 'string' && config.BottomRightOrder)
+            ? config.BottomRightOrder
+            : 'screenshot,download,favorite,episodepreview,subtitles,audio,mute,volumeslider,settings,airplay,pip,fullscreen';
+
+        // FIX for a real bug found live: ".osdTimeText" ("Ends At") is an
+        // untagged sibling in this exact same container (confirmed from
+        // the real source), not part of any order list, but without an
+        // anchor, applyOrder() would move any of the 12 tagged items
+        // ahead of it, confirmed live via an actual test: it ended up
+        // displaced to position 3 instead of staying first. Beyond just
+        // looking wrong, this breaks its own "margin-right: auto" flex
+        // spacer role (see applyOsdInternalHides()'s own comment on
+        // HideEndsAtInfo) if its position shifts. Anchored the same way
+        // Bottom-Left's native buttons are: everything in this order
+        // list is positioned after it, its own place stays untouched.
+        const anchor = container.querySelector('.osdTimeText');
+
+        applyOrder(container, orderCsv, 'data-jvosd-order-id', anchor);
     }
 
     // ============================================================
