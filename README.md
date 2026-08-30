@@ -41,17 +41,17 @@ This plugin grew out of my [Jellyfin VideoOSD Projects](https://github.com/chris
 
 ---
 
-VideoOSD Tweaks and Candy brings everything together in one Jellyfin plugin, and adds a layer of control over the vanilla OSD that was not possible before: hide individual elements, reorder them across all four zones, and shape the OSD exactly the way you want it. On top of that, optional addons extend the player with features familiar from VLC and beyond. And then there is the Candy.
+**VideoOSD Tweaks and Candy puts you in full control of the Jellyfin video player OSD. Hide, reorder, and extend every element, with optional VLC-familiar controls and artwork overlays on top.**
 
 ---
 
 ## What This Is
 
-**VideoOSD Tweaks and Candy is a Jellyfin Web plugin for modifying, reordering, and extending the native Jellyfin VideoOSD. It is a VideoOSD modifier and enhancer, not a skin, theme, or custom player.**
+A Jellyfin Web plugin for modifying, reordering, and extending the native Jellyfin VideoOSD. A VideoOSD modifier and enhancer, not a skin, theme, or custom player.
 
 The Jellyfin video OSD is functional, but fixed. You get what Jellyfin gives you, in the order Jellyfin decided.
 
-VideoOSD Tweaks and Candy changes that. Every vanilla OSD element can be individually hidden or repositioned across four independent zones: top left, top right, bottom left, and bottom right. No compromise layout, no living with buttons you never use.
+This plugin changes that. Every vanilla OSD element can be individually hidden or repositioned across four independent zones: top left, top right, bottom left, and bottom right. No compromise layout, no living with buttons you never use.
 
 On top of that, optional addons bring the controls you actually want: playback speed steps, frame-by-frame navigation, A-B loop, quick download, screenshots, and a Custom On/Off Menu to toggle all of it without leaving the video. Think of it as a VLC crossover for the Jellyfin OSD, extended with things VLC never had.
 
