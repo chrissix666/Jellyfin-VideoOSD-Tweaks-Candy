@@ -8,32 +8,38 @@
 
 ---
 
+This plugin grew out of my [Jellyfin VideoOSD Projects](https://github.com/chrissix666/Jellyfin-VideoOSD-Projects-Overview), a collection of standalone scripts for the Jellyfin video OSD. The scripts continue to work independently via JavaScript injector.
+
+---
+
 # VideoOSD Tweaks and Candy
 
 - [What This Is](#what-this-is)
 - [What This Is Not](#what-this-is-not)
+- [Under the Hood](#under-the-hood)
+  - [Architecture](#architecture)
+  - [Instant OSD](#instant-osd)
 - [General Tweaks](#general-tweaks)
-  - [On/Off](#onoff)
-  - [Hide](#hide)
-  - [Sort](#sort)
+  - [On/Off - Custom Addons](#onoff)
+  - [Hide - Vanilla Elements](#hide)
+  - [Sort - Vanilla & Custom Addon Elements](#sort)
 - [Custom Tweaks](#custom-tweaks)
   - [Custom On/Off Menu](#custom-onoff-menu)
-  - [Custom Playback Speed Buttons](#custom-playback-speed-buttons)
   - [Custom Playback Speed Menu](#custom-playback-speed-menu)
+  - [Custom Playback Speed Buttons](#custom-playback-speed-buttons)
   - [Frame-by-Frame Buttons](#frame-by-frame-buttons)
+  - [A-B Loop Button](#a-b-loop-button)
   - [Download Button](#download-button)
   - [Screenshot Button](#screenshot-button)
-  - [A-B Loop Button](#a-b-loop-button)
 - [Candy](#candy)
   - [Artwork Display](#artwork-display)
 - [Installation](#installation)
+- [Settings Management](#settings-management)
 - [Settings Not Applying?](#settings-not-applying)
-- [Tested On](#tested-on)
+- [Developed For & Tested On](#developed-for--tested-on)
 - [License](#license)
 
 ---
-
-This plugin grew out of my [Jellyfin VideoOSD Projects](https://github.com/chrissix666/Jellyfin-VideoOSD-Projects-Overview), a collection of standalone scripts for the Jellyfin video OSD. The scripts continue to work independently via JavaScript injector.
 
 VideoOSD Tweaks and Candy brings everything together in one Jellyfin plugin, and adds a layer of control over the vanilla OSD that was not possible before: hide individual elements, reorder them across all four zones, and shape the OSD exactly the way you want it. On top of that, eight optional addons extend the player with features familiar from VLC and beyond. And then there is the Candy.
 
@@ -56,6 +62,26 @@ And then there is the Candy. Artwork Display overlays your library artwork direc
 VideoOSD Tweaks and Candy is not a skin, not a theme, not a custom player, not a replacement for Jellyfin Web, not standalone CSS, and not a frontend of its own.
 
 It is a plugin that sits on top of vanilla Jellyfin Web and builds on it. The OSD still looks and feels like Jellyfin. Everything is native, just packed with features, customization, and control that vanilla does not offer out of the box.
+
+---
+
+## Under the Hood
+
+### Architecture
+
+VideoOSD Tweaks and Candy is not a single script thrown at a page. It is a proper multi-layer Jellyfin plugin built from three technologies working together.
+
+The core is written in **C#** and runs server-side as a native Jellyfin plugin. It handles configuration, stores all settings in the Jellyfin backend, and controls which addons are delivered to the browser at all. Disabled addons never reach the client.
+
+On top of that, eight individual **JavaScript** addons implement the actual OSD features. Each one is self-contained, independently toggleable, and delivered only when enabled. They interact with the Jellyfin Web frontend without modifying any core files.
+
+Where JavaScript alone is not enough, targeted **CSS** fills the gaps, handling spacing, ordering, and visual integration so everything fits cleanly into the native Jellyfin OSD without looking bolted on.
+
+### Instant OSD
+
+Normally, when you open a video, the OSD briefly rebuilds itself from its vanilla state into your configured custom state. If you have a lot of customization set up, you can actually see this happen for a fraction of a second. It looks rough.
+
+I managed to fix that. After the first video following a settings change, the new layout is cached locally. From that point on, the OSD builds directly in its custom state before the first frame is ever drawn. No visible rebuild, no flicker, no transition. It just looks the way you set it up, as if that were always how it was.
 
 ---
 
@@ -136,15 +162,11 @@ Vanilla OSD elements only. Hide individual buttons, labels, and controls across 
 
 Reorder both vanilla elements and custom addons across all four zones. Each zone has its own independent order.
 
-- **Top Left:** reorder title bar elements among each other
-- **Top Right:** reorder the available top right buttons
+- **Top Left:** for episodes the title bar splits into 3 parts: series title, season/episode number, and episode title, each reorderable individually.
+- **Top Right:** a simple swap, as there are normally only two icons here: SyncPlay and Cast.
 - **Bottom Left:** sort your custom addons among each other
 - **Bottom Right:** vanilla elements and custom addons in one unified sortable list, including Episode Preview addon compatibility
-
-- Top-Left Order
-- Top-Right Order
-- Bottom-Left Order
-- Bottom-Right Order
+- **Customs Submenu:** sort mode and custom order for the on/off submenu
 
 ---
 
@@ -158,6 +180,14 @@ A quick-switch submenu directly inside the playback settings. Toggle any addon o
 
 <img src="https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-CustomOnOff-Menu/main/Screenshot-Main.png" width="500">
 <img src="https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-CustomOnOff-Menu/main/Screenshot-Sub.png" width="500">
+
+---
+
+### Custom Playback Speed Menu
+
+Define your own speed list. Add values you actually use, remove the ones you never touch. Works together with the Speed Buttons.
+
+<img src="https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-CustomPlaybackSpeed-Menu/main/Screenshot.png" width="300">
 
 ---
 
@@ -185,14 +215,6 @@ Step up and down through playback speeds directly from the OSD. A center field s
 
 ---
 
-### Custom Playback Speed Menu
-
-Define your own speed list. Add values you actually use, remove the ones you never touch. Works together with the Speed Buttons.
-
-<img src="https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-CustomPlaybackSpeed-Menu/main/Screenshot.png" width="300">
-
----
-
 ### Frame-by-Frame Buttons
 
 Step one frame backward or forward during paused playback. FPS-aware. Works within the limitations of the Chrome video engine, not a full VLC-style frame engine, but as close as the browser allows.
@@ -200,6 +222,22 @@ Step one frame backward or forward during paused playback. FPS-aware. Works with
 <img src="https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-FrameByFrame-Buttons/main/Screenshot.png" width="500">
 
 <img src="screenshots/framebyframe-settings.png" width="700">
+
+**Settings**
+
+- Hide on Narrow Window
+- Individual Centered Gap Override
+- Centered Gap Value
+
+---
+
+### A-B Loop Button
+
+Click once to set the start, click again to set the end, and the video loops that section endlessly. Third click clears it. Just like VLC.
+
+<img src="https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-ABLoop-Button/main/Screenshot.png" width="500">
+
+<img src="screenshots/abloop-settings.png" width="700">
 
 **Settings**
 
@@ -220,7 +258,9 @@ Download the currently playing video as a direct 1:1 copy with one click. No tra
 **Settings**
 
 - Hide on Narrow Window
-- Filename Choice
+- **Filename Choice:**
+  - Original Filename (1:1) - uses the exact filename as stored on the server
+  - Library Name - uses the Jellyfin library title including year if enabled
 - Include Year - Movies, Episodes, Videos
 
 ---
@@ -236,10 +276,17 @@ Single click for one screenshot, hold for rapid-fire, double-click to toggle aut
 **Settings**
 
 - Hide on Narrow Window
-- File Format
-- Filename Source
+- **File Format:** PNG or JPG
+- **Filename Source:**
+  - Library Name - uses the Jellyfin library title
+  - Original Filename - uses the original file name
 - Include Year - Movies, Episodes, Videos
-- Filename Pattern
+- **Filename Pattern:**
+  - "Screenshot" + Timestamp + Label
+  - "Screenshot" + Timestamp (Snipping Tool Style)
+  - "Screenshot" + Label
+  - Timestamp + Label
+  - "Screenshot" Only
 
 **Rapid-Fire Mode (hold to shoot)**
 
@@ -250,22 +297,6 @@ Single click for one screenshot, hold for rapid-fire, double-click to toggle aut
 
 - Enabled
 - Interval (ms)
-
----
-
-### A-B Loop Button
-
-Click once to set the start, click again to set the end, and the video loops that section endlessly. Third click clears it. Just like VLC.
-
-<img src="https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-ABLoop-Button/main/Screenshot.png" width="500">
-
-<img src="screenshots/abloop-settings.png" width="700">
-
-**Settings**
-
-- Hide on Narrow Window
-- Individual Centered Gap Override
-- Centered Gap Value
 
 ---
 
@@ -325,7 +356,7 @@ Every artwork type has its own full set of settings:
 
 ## Installation
 
-Requires the [File Transformation Plugin](https://github.com/jellyfin/jellyfin-plugin-filetransformation) to be installed first.
+Requires the [File Transformation Plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) to be installed first.
 
 **Via Plugin Catalog (recommended)**
 
@@ -345,6 +376,22 @@ Requires the [File Transformation Plugin](https://github.com/jellyfin/jellyfin-p
 
 ---
 
+## Settings Management
+
+### Restore Defaults (Tab)
+
+Every settings tab has its own **Restore defaults** button in the top right corner. It resets only the settings of that tab to their default values, everything else stays untouched.
+
+### Restore Defaults (All)
+
+The General tab has an additional **Restore all** button at the bottom. This resets every setting across all tabs back to their defaults in one go.
+
+### Backup and Restore (All)
+
+The General tab also includes a code-based backup system. **Generate** creates a compact code that represents your complete current settings. Copy it and store it somewhere safe. **Import** lets you paste that code back at any time to restore your full configuration, for example after a reinstall or when moving to a new server.
+
+---
+
 ## Settings Not Applying?
 
 Every once in a while, a saved setting doesn't seem to take effect right away, even after saving and reloading. To be explicit about this: **this is not a bug in VideoOSD Tweaks and Candy**, it's normal browser caching behavior. Your browser can hang onto an old cached copy of the page or script instead of fetching the new one, and this same thing can happen with other Jellyfin plugins and addons too, not just this one; it's just how browsers work, not something specific to this plugin.
@@ -357,11 +404,13 @@ If that happens: open your browser's DevTools (right-click anywhere, **Inspect**
 
 ---
 
-## Tested On
+## Developed For & Tested On
 
-- Jellyfin Web 10.10.7
+- Designed and written for Jellyfin Web 10.10.7
 - Google Chrome
 - Windows 11
+
+Other versions may work but are not tested and could lead to unexpected behavior.
 
 ---
 
