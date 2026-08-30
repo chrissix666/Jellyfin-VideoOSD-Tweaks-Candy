@@ -75,7 +75,7 @@ VideoOSD Tweaks and Candy is not a single script thrown at a page. It is a prope
 
 The core is written in **C#** and runs server-side as a native Jellyfin plugin. It handles configuration, stores all settings in the Jellyfin backend, and controls which addons are delivered to the browser at all. Disabled addons never reach the client.
 
-On top of that, eight individual **JavaScript** addons implement the actual OSD features. Each one is self-contained, independently toggleable, and delivered only when enabled. They interact with the Jellyfin Web frontend without modifying any core files.
+On top of that, individual **JavaScript** addons implement the actual OSD features. Each one is self-contained, independently toggleable, and delivered only when enabled. They interact with the Jellyfin Web frontend without modifying any core files.
 
 Where JavaScript alone is not enough, targeted **CSS** fills the gaps, handling spacing, ordering, and visual integration so everything fits cleanly into the native Jellyfin OSD without looking bolted on.
 
