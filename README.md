@@ -10,6 +10,8 @@
 
 This plugin grew out of my [Jellyfin VideoOSD Projects](https://github.com/chrissix666/Jellyfin-VideoOSD-Projects-Overview), a collection of standalone scripts for the Jellyfin video OSD. The scripts continue to work independently via JavaScript injector.
 
+I have developed many Jellyfin Web script mods over the years, but besides this one, only a single other true plugin: [Cinema Project](https://github.com/chrissix666/Jellyfin-Cinema-Project). A virtual cinema environment based on three.js that gives your movies an ambient feel, powered by visual metadata (artwork, theme songs, trailers, and more).
+
 ---
 
 # VideoOSD Tweaks and Candy
@@ -91,7 +93,7 @@ I managed to fix that. After the first video following a settings change, the ne
 
 Hide or reorder any vanilla Jellyfin OSD element independently across all four zones. Each zone is configured separately through the admin dashboard.
 
-- **Top Left:** title bar elements - back button, title, year, series info
+- **Top Left:** back button and title bar elements (title, year, series info)
 - **Top Right:** sync play and cast buttons
 - **Bottom Left:** playback controls and custom addons, sortable among each other when multiple are enabled
 - **Bottom Right:** vanilla elements and custom addons sorted together in one unified order, including full compatibility with the Episode Preview addon
