@@ -291,7 +291,7 @@ Download the currently playing video as a direct 1:1 copy with one click. No tra
 
 ### Screenshot Button
 
-Single click for one screenshot, hold for rapid-fire, double-click to toggle automatic mode. Saved as PNG with timestamp and video title.
+Adds a screenshot button to the OSD. Single click always takes one screenshot. Optionally: hold for rapid-fire mode, or double-click for automatic mode. File format (PNG or JPG), filename source, and naming pattern are all configurable.
 
 <img src="https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-Screenshot-Button/main/Screenshot.png" width="500">
 
