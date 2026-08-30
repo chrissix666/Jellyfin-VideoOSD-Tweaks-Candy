@@ -174,6 +174,8 @@ Reorder both vanilla elements and custom addons across all four zones. Each zone
 
 ## Custom Tweaks
 
+Optional addons that extend the OSD with additional controls. Each one independently toggleable via the admin dashboard or the Custom On/Off Menu during playback.
+
 ---
 
 ### Custom On/Off Menu
@@ -183,6 +185,13 @@ A quick-switch submenu directly inside the playback settings. Toggle any addon o
 <img src="https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-CustomOnOff-Menu/main/Screenshot-Main.png" width="500">
 <img src="https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-CustomOnOff-Menu/main/Screenshot-Sub.png" width="500">
 
+**Settings**
+
+The submenu order and sorting are configured in the General tab under Sort. Two options are available:
+
+- Sort Mode (alphabetical or custom order)
+- Custom Order
+
 ---
 
 ### Custom Playback Speed Menu
@@ -190,6 +199,12 @@ A quick-switch submenu directly inside the playback settings. Toggle any addon o
 Define your own speed list. Add values you actually use, remove the ones you never touch. Works together with the Speed Buttons.
 
 <img src="https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-CustomPlaybackSpeed-Menu/main/Screenshot.png" width="300">
+
+**Settings**
+
+- Hide on Narrow Window
+- Individual Centered Gap Override
+- Centered Gap Value
 
 ---
 
