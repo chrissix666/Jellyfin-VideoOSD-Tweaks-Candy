@@ -176,7 +176,7 @@ Reorder both vanilla elements and custom addons across all four zones. Each zone
 
 ## Custom Tweaks
 
-Optional addons that extend the OSD with additional controls. Each one independently toggleable via the admin dashboard or the Custom On/Off Menu during playback.
+Optional addons that extend the OSD with additional controls. Each addon can be fully enabled or disabled in the admin dashboard. When enabled, visibility can also be toggled on the fly via the Custom On/Off Menu during playback without leaving the video.
 
 ---
 
