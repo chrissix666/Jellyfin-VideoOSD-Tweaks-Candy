@@ -41,17 +41,19 @@ This plugin grew out of my [Jellyfin VideoOSD Projects](https://github.com/chris
 
 ---
 
-VideoOSD Tweaks and Candy brings everything together in one Jellyfin plugin, and adds a layer of control over the vanilla OSD that was not possible before: hide individual elements, reorder them across all four zones, and shape the OSD exactly the way you want it. On top of that, eight optional addons extend the player with features familiar from VLC and beyond. And then there is the Candy.
+VideoOSD Tweaks and Candy brings everything together in one Jellyfin plugin, and adds a layer of control over the vanilla OSD that was not possible before: hide individual elements, reorder them across all four zones, and shape the OSD exactly the way you want it. On top of that, optional addons extend the player with features familiar from VLC and beyond. And then there is the Candy.
 
 ---
 
 ## What This Is
 
+**VideoOSD Tweaks and Candy is a Jellyfin Web plugin for modifying, reordering, and extending the native Jellyfin VideoOSD. It is a VideoOSD modifier and enhancer, not a skin, theme, or custom player.**
+
 The Jellyfin video OSD is functional, but fixed. You get what Jellyfin gives you, in the order Jellyfin decided.
 
 VideoOSD Tweaks and Candy changes that. Every vanilla OSD element can be individually hidden or repositioned across four independent zones: top left, top right, bottom left, and bottom right. No compromise layout, no living with buttons you never use.
 
-On top of that, eight optional addons bring the controls you actually want: playback speed steps, frame-by-frame navigation, A-B loop, quick download, screenshots, and a Custom On/Off Menu to toggle all of it without leaving the video. Think of it as a VLC crossover for the Jellyfin OSD, extended with things VLC never had.
+On top of that, optional addons bring the controls you actually want: playback speed steps, frame-by-frame navigation, A-B loop, quick download, screenshots, and a Custom On/Off Menu to toggle all of it without leaving the video. Think of it as a VLC crossover for the Jellyfin OSD, extended with things VLC never had.
 
 And then there is the Candy. Artwork Display overlays your library artwork directly onto the OSD during playback. Fully configurable down to the smallest detail.
 
@@ -261,7 +263,12 @@ Download the currently playing video as a direct 1:1 copy with one click. No tra
 - **Filename Choice:**
   - Original Filename (1:1) - uses the exact filename as stored on the server
   - Library Name - uses the Jellyfin library title including year if enabled
-- Include Year - Movies, Episodes, Videos
+
+**Include Year (Library Name only)**
+
+- Movies
+- Episodes
+- Videos
 
 ---
 
@@ -280,13 +287,18 @@ Single click for one screenshot, hold for rapid-fire, double-click to toggle aut
 - **Filename Source:**
   - Library Name - uses the Jellyfin library title
   - Original Filename - uses the original file name
-- Include Year - Movies, Episodes, Videos
 - **Filename Pattern:**
   - "Screenshot" + Timestamp + Label
   - "Screenshot" + Timestamp (Snipping Tool Style)
   - "Screenshot" + Label
   - Timestamp + Label
   - "Screenshot" Only
+
+**Include Year (Library Name only)**
+
+- Movies
+- Episodes
+- Videos
 
 **Rapid-Fire Mode (hold to shoot)**
 
@@ -307,6 +319,8 @@ Single click for one screenshot, hold for rapid-fire, double-click to toggle aut
 Overlay artwork during playback, fully configurable down to the smallest detail.
 
 <img src="https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-Artwork-Display/main/Screenshot.jpg" width="600">
+
+*Screenshots are only example showcase. It absolutely does not mean that everything should be displayed at the same time like stickers. Of course it looks best with just one layer, for example a clearlogo left top or clearart right bottom, and at most a second one added, such as discart or season poster.*
 
 <img src="screenshots/artwork-settings.png" width="700">
 
@@ -361,8 +375,14 @@ Requires the [File Transformation Plugin](https://github.com/IAmParadox27/jellyf
 **Via Plugin Catalog (recommended)**
 
 1. In Jellyfin, go to Dashboard > Plugins > Repositories
-2. Add a new repository with this URL:
-   `https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-Tweaks-Candy/main/manifest.json`
+2. Add a new repository:
+   - **Name:** anything you like, for example `VideoOSD Tweaks and Candy`
+   - **URL:**
+
+```
+https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-Tweaks-Candy/main/manifest.json
+```
+
 3. Go to the Catalog tab, find VideoOSD Tweaks and Candy, and install it
 4. Restart Jellyfin
 5. Configure the plugin under Dashboard > Plugins > VideoOSD Tweaks and Candy
