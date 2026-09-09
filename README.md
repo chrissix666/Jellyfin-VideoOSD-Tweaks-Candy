@@ -276,9 +276,9 @@ Download the currently playing video as a direct 1:1 copy with one click. No tra
 - Hide on Narrow Window
 - **Filename Choice:**
   - Original Filename - uses the exact filename as stored on the server
-  - Library Name - uses the Jellyfin library title including year if enabled
+  - Library Name - uses the Jellyfin library title
 
-**Include Year (Library Name only)**
+**Include Year**
 
 - Movies
 - Episodes
