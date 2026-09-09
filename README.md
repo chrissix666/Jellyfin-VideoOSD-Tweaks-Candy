@@ -205,12 +205,6 @@ Define your own speed list. Add values you actually use, remove the ones you nev
 
 <img src="https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-CustomPlaybackSpeed-Menu/main/Screenshot.png" width="300">
 
-**Settings**
-
-- Hide on Narrow Window
-- Individual Centered Gap Override
-- Centered Gap Value
-
 ---
 
 ### Custom Playback Speed Buttons
