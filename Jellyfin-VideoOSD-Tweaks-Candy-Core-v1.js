@@ -127,9 +127,38 @@
         });
     }
 
+    // FIX for a real bug found live (OSD buttons such as Screenshot and
+    // Download "sometimes" swapped despite a configured order): Jellyfin
+    // keeps up to 3 pages alive in the DOM (viewContainer.js,
+    // pageContainerCount = 3, slots reused round-robin), and every new
+    // playback started from a non-video page pushes a FRESH
+    // #videoOsdPage into the next slot. A stale, hidden #videoOsdPage
+    // from an earlier playback can therefore still sit in an EARLIER
+    // slot, and getElementById() (first match in document order) then
+    // returned that dead page: the OSD looked inactive, the observer
+    // watched the wrong subtree. The live OSD page is the one that is
+    // not hidden (verified in the real source: the new/restored view has
+    // no "hide" class by the time "pageshow" is dispatched, every other
+    // slot has it). All OSD lookups go through this, never through a
+    // document-wide query.
+    // Set only for the duration of the synchronous re-apply inside the
+    // "pagehide" handler: when leaving to a React page (search, user
+    // profile, quick connect), Page.tsx -> viewManager.hideView()
+    // dispatches "pagehide" BEFORE it adds "hide" to the OSD page
+    // (verified in the real source), so without this the page that is
+    // being left would still count as the live OSD.
+    let leavingOsdPage = null;
+
+    function getActiveOsdPage() {
+        const pages = document.querySelectorAll('#' + OSD_PAGE_ID);
+        for (let i = 0; i < pages.length; i++) {
+            if (pages[i] !== leavingOsdPage && !pages[i].classList.contains('hide')) return pages[i];
+        }
+        return null;
+    }
+
     function isVideoOsdActive() {
-        const page = document.getElementById(OSD_PAGE_ID);
-        return !!page && !page.classList.contains('hide');
+        return !!getActiveOsdPage();
     }
 
     // ============================================================
@@ -221,14 +250,14 @@
     async function getNowPlayingItemInfo() {
         if (!window.ApiClient?.getSessions) return null;
         try {
-            const sessions = await ApiClient.getSessions();
+            const sessions = await ApiClient.getSessions({ deviceId: ApiClient.deviceId() });
             const session =
                 sessions.find(function (s) { return s.NowPlayingItem && s.PlayState; }) ||
                 sessions.find(function (s) { return s.NowPlayingItem; });
             const item = session?.NowPlayingItem;
             if (!item) return null;
 
-            const itemName = item.Name || item.Id || 'unknown';
+            const itemName = item.Id || item.Name || 'unknown';
             if (cachedItemInfo && cachedItemInfoName === itemName) {
                 return cachedItemInfo;
             }
@@ -559,7 +588,9 @@
     }
 
     function applyBottomLeftOrder(config) {
-        const container = document.querySelector('.videoOsdBottom .buttons.focuscontainer-x > div[dir="ltr"]');
+        const osdPage = getActiveOsdPage();
+        if (!osdPage) return;
+        const container = osdPage.querySelector('.videoOsdBottom .buttons.focuscontainer-x > div[dir="ltr"]');
         if (!container) return;
 
         const idMap = {
@@ -759,7 +790,14 @@
     //   see; all writes below are additionally change-guarded, so a
     //   settled state produces zero mutations.
     function applyBottomRightOrder(config) {
-        const favBtn = document.querySelector('.btnUserRating');
+        // Scoped to the live OSD page (see getActiveOsdPage()): a bare
+        // document-wide '.btnUserRating' also matches the favorite button
+        // of a cached item details page (itemDetails/index.html), which
+        // then got sorted instead of the OSD whenever that page sat in
+        // an earlier slot.
+        const osdPage = getActiveOsdPage();
+        if (!osdPage) return;
+        const favBtn = osdPage.querySelector('.videoOsdBottom .btnUserRating');
         const container = favBtn?.parentNode;
         if (!container) return;
 
@@ -847,11 +885,14 @@
     // own (much smaller) subtree, and only exists at all while actually
     // on the video page, disconnected the instant we navigate away.
     let osdObserver = null;
+    let observedOsdPage = null;
 
     function startOsdObserver() {
-        if (osdObserver) return;
-        const osdPage = document.getElementById(OSD_PAGE_ID);
+        const osdPage = getActiveOsdPage();
         if (!osdPage) return;
+        if (osdObserver && observedOsdPage === osdPage) return;
+        stopOsdObserver();
+        observedOsdPage = osdPage;
         osdObserver = new MutationObserver(function () {
             applyAll();
         });
@@ -867,6 +908,7 @@
         if (!osdObserver) return;
         osdObserver.disconnect();
         osdObserver = null;
+        observedOsdPage = null;
     }
 
     // CONFIG CACHE for instant, pre-paint layout (user-approved after
@@ -952,13 +994,20 @@
         });
     }
 
-    function onVideoOsdHide() {
+    function onVideoOsdHide(page) {
         stopOsdObserver();
         // Re-run once more so the header elements (Back/Title/Sync/Cast)
         // correctly un-hide again now that we've left the video page,
         // isVideoOsdActive() inside applyHeaderButtonHides()/
         // applyTitleDisplay() picks up the new state on its own.
-        applyAll();
+        // The page being left is excluded explicitly, it may not carry
+        // "hide" yet (see leavingOsdPage).
+        leavingOsdPage = page;
+        try {
+            applyAll();
+        } finally {
+            leavingOsdPage = null;
+        }
     }
 
     document.addEventListener('pageshow', function (e) {
@@ -969,7 +1018,7 @@
 
     document.addEventListener('pagehide', function (e) {
         if (e.target && e.target.id === OSD_PAGE_ID) {
-            onVideoOsdHide();
+            onVideoOsdHide(e.target);
         }
     });
 
