@@ -59,11 +59,38 @@
         const maxAttempts = 120;
         const delayMs = 250;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            // No ApiClient yet (jellyfin-web creates it once a server is
+            // known, e.g. after the server selection page): wait without
+            // using up an attempt, like the not-logged-in case below.
+            if (!window.ApiClient) attempt--;
             if (window.ApiClient && typeof ApiClient.getPluginConfiguration === 'function') {
+                // Not logged in yet (e.g. still on the login page): every
+                // request would only fail with 401, so wait without using up
+                // an attempt (the whole budget used to run out right there).
+                if (typeof ApiClient.accessToken === 'function' && !ApiClient.accessToken()) {
+                    attempt--;
+                    await new Promise(function (resolve) { setTimeout(resolve, delayMs); });
+                    continue;
+                }
                 try {
-                    const config = await ApiClient.getPluginConfiguration(PLUGIN_GUID);
+                    // The plugin's own endpoint (1.0.1.0+) is readable for every
+                    // signed-in user; Jellyfin's plugin configuration endpoint
+                    // is admin-only. Older plugin versions answer 404 there, then
+                    // the admin-only endpoint is used as before.
+                    let config;
+                    try {
+                        config = await ApiClient.getJSON(ApiClient.getUrl('VideoOSDTweaksCandy/ClientConfiguration'));
+                    } catch (endpointErr) {
+                        if (!(endpointErr && endpointErr.status === 404)) throw endpointErr;
+                        config = await ApiClient.getPluginConfiguration(PLUGIN_GUID);
+                    }
                     if (config) return config;
                 } catch (err) {
+                    // 403: the configuration endpoint is admin-only; 404: plugin
+                    // not installed (standalone use). Retrying can't change
+                    // either, so stop and use the defaults instead of sending
+                    // up to 120 failing requests.
+                    if (err && (err.status === 403 || err.status === 404)) return null;
                     // fall through, try again after the delay below
                 }
             }
@@ -219,10 +246,15 @@
     const TITLE_ID = 'pageTitle';
     const RAW_TEXT_MARKER_ATTR = 'data-jvosdTcRawText';
 
-    const EPISODE_TITLE_REGEX = /^(.*?)\s-\sS(\d+):E(\d+)(?:-(\d+))?\s-\s(.*?)(?:\s\((\d{4})\))?$/;
-    const PLAIN_TITLE_REGEX = /^(.*?)(?:\s\((\d{4})\))?$/;
+    // Year digits use \p{Nd} (with the "u" flag), not \d: Jellyfin
+    // renders the year via toLocaleString() in the user's locale, which
+    // yields native digits for e.g. fa/bn/mr/ne ("(۲۰۰۸)"), and \d
+    // only matches ASCII digits. The episode name part is optional:
+    // Jellyfin omits it for episodes without a name ("Show - S1:E2").
+    const EPISODE_TITLE_REGEX = /^(.*?)\s-\sS(\d+):E(\d+)(?:-(\d+))?(?:\s-\s(.*?))?(?:\s\((\p{Nd}{4})\))?$/u;
+    const PLAIN_TITLE_REGEX = /^(.*?)(?:\s\((\p{Nd}{4})\))?$/u;
 
-    function parseTitleSync(rawText) {
+    function parseTitleSync(rawText, itemInfo) {
         const episodeMatch = rawText.match(EPISODE_TITLE_REGEX);
         if (episodeMatch) {
             return {
@@ -231,12 +263,41 @@
                 season: episodeMatch[2],
                 episode: episodeMatch[3],
                 episodeEnd: episodeMatch[4] || null,
-                episodeName: episodeMatch[5],
+                episodeName: episodeMatch[5] || '',
                 year: episodeMatch[6] || null
             };
         }
 
         const plainMatch = rawText.match(PLAIN_TITLE_REGEX);
+
+        // Episodes Jellyfin titles without "S1:E2": specials ("Show -
+        // Special - Name", the middle label is localized, e.g. "Extra" in
+        // German) and episodes without an index number ("Show - Name").
+        // Parsing the localized label is not possible, so the known
+        // series and episode names of the playing item are used to split
+        // the title instead; the middle part is kept verbatim as the
+        // season/episode part.
+        if (plainMatch && itemInfo && itemInfo.kind === 'episode' && itemInfo.seriesName && itemInfo.name) {
+            const body = plainMatch[1];
+            const prefix = itemInfo.seriesName + ' - ';
+            const suffix = ' - ' + itemInfo.name;
+            let sxeText = null;
+            if (body === prefix + itemInfo.name) {
+                sxeText = '';
+            } else if (body.startsWith(prefix) && body.endsWith(suffix) && body.length > prefix.length + suffix.length) {
+                sxeText = body.slice(prefix.length, body.length - suffix.length);
+            }
+            if (sxeText !== null) {
+                return {
+                    kind: 'episode',
+                    seriesName: itemInfo.seriesName,
+                    sxeText: sxeText,
+                    episodeName: itemInfo.name,
+                    year: plainMatch[2] || null
+                };
+            }
+        }
+
         return {
             kind: 'plain',
             name: plainMatch ? plainMatch[1] : rawText,
@@ -268,7 +329,11 @@
 
             cachedItemInfo = {
                 kind: kind,
-                originalTitle: item.OriginalTitle || null
+                id: item.Id || null,
+                originalTitle: item.OriginalTitle || null,
+                name: item.Name || null,
+                seriesName: item.SeriesName || null,
+                type: item.Type || null
             };
             cachedItemInfoName = itemName;
             return cachedItemInfo;
@@ -335,12 +400,36 @@
     }
 
     function applyTitleDisplay(config, itemInfo) {
+        const el = document.querySelector('h3.' + TITLE_ID);
+
         // Gated the same way applyHeaderButtonHides() is: h3.pageTitle is
         // the SAME shared header title element on every single page
         // site-wide, not just the video OSD.
-        if (!isVideoOsdActive()) return;
+        // FIX for a real bug found live: with HideTitleBar, leaving the
+        // OSD used to return here with the hide class still set, so the
+        // shared header title (including the home page logo, which is
+        // rendered through the same element) stayed hidden on every page
+        // until a reload. Jellyfin never removes our class itself. The
+        // render cache is dropped too, so the next OSD visit always
+        // renders fresh.
+        if (!isVideoOsdActive()) {
+            if (el) {
+                if (el.classList.contains(FORCE_HIDE_CLASS)) el.classList.remove(FORCE_HIDE_CLASS);
+                // Jellyfin doesn't reset the title on every page, so our
+                // rebuilt text could stay behind and be read as native text
+                // on the next video start: put Jellyfin's own text back.
+                const marker = el.getAttribute(RAW_TEXT_MARKER_ATTR);
+                if (marker && marker === el.textContent && el.dataset.jvosdTcSourceText !== undefined) {
+                    el.textContent = el.dataset.jvosdTcSourceText;
+                }
+                delete el.dataset.jvosdTcLastRenderSignature;
+                el.removeAttribute(RAW_TEXT_MARKER_ATTR);
+                delete el.dataset.jvosdTcSourceText;
+            }
+            titleRawTextForItemInfo = null;
+            return;
+        }
 
-        const el = document.querySelector('h3.' + TITLE_ID);
         if (!el) return;
 
         if (!needsTitleIntervention(config)) {
@@ -373,6 +462,24 @@
 
         if (!rawText) return;
 
+        // FIX for a real bug found live: item info (kind, original title)
+        // was only fetched on "pageshow", but the next item of a queue
+        // (next episode, playlist) plays without any navigation
+        // (appRouter.show() is a no-op for the path already shown), so the
+        // new title was rendered with the previous item's kind/original
+        // title. A new native title text means a new item: drop the old
+        // info (the title falls back to the parsed kind until the fresh
+        // info arrives) and fetch it again.
+        if (rawText !== titleRawTextForItemInfo) {
+            const firstTitle = titleRawTextForItemInfo === null;
+            titleRawTextForItemInfo = rawText;
+            if (!firstTitle) {
+                currentItemInfo = null;
+                itemInfo = null;
+                refreshItemInfoAndReapply();
+            }
+        }
+
         // FIX, a real efficiency gap the user asked about directly:
         // confirmed against the real source that Jellyfin's own
         // time-display update runs (throttled) roughly every 700ms
@@ -399,18 +506,35 @@
         // rawText alone would have permanently locked in the
         // pre-itemInfo render (e.g. movie original-title replacement
         // silently never applying).
-        const itemInfoSignature = (itemInfo?.kind || '') + '\u0000' + (itemInfo?.originalTitle || '');
-        const renderSignature = rawText + '\u0001' + itemInfoSignature + '\u0001' + (config.HideTitleBar ? '1' : '0');
-        if (el.dataset.jvosdTcLastRenderSignature === renderSignature) return;
+        // FIX for a real bug found live: the signature alone was not
+        // enough. When Jellyfin re-set the SAME title text (replaying the
+        // same item, or its own re-set on audio/subtitle track changes),
+        // rawText, itemInfo and the signature were unchanged, so this
+        // returned early and left Jellyfin's native text on screen. The
+        // early return now also requires that what is on screen is still
+        // our own render. Likewise every title setting is part of the
+        // signature, so a changed setting re-renders even for the same
+        // title.
+        const itemInfoSignature = (itemInfo?.kind || '') + '\u0000' + (itemInfo?.originalTitle || '') + '\u0000' + (itemInfo?.seriesName || '') + '\u0000' + (itemInfo?.name || '');
+        const configSignature = [
+            config.HideTitleBar, config.HideSeriesTitle, config.HideSeasonEpisodeNumber, config.HideEpisodeTitle,
+            config.HideYearMovies, config.HideYearEpisodes, config.HideYearVideos, config.ShowOriginalTitleMovies,
+            config.TopLeftOrder
+        ].map(function (v) { return String(v); }).join('\u0000');
+        const renderSignature = rawText + '\u0001' + itemInfoSignature + '\u0001' + configSignature;
+        const stillOurRender = config.HideTitleBar
+            ? el.classList.contains(FORCE_HIDE_CLASS)
+            : el.getAttribute(RAW_TEXT_MARKER_ATTR) === el.textContent;
+        if (stillOurRender && el.dataset.jvosdTcLastRenderSignature === renderSignature) return;
         el.dataset.jvosdTcLastRenderSignature = renderSignature;
 
         if (config.HideTitleBar) {
-            el.classList.add(FORCE_HIDE_CLASS);
+            if (!el.classList.contains(FORCE_HIDE_CLASS)) el.classList.add(FORCE_HIDE_CLASS);
             return;
         }
         el.classList.remove(FORCE_HIDE_CLASS);
 
-        const parsed = parseTitleSync(rawText);
+        const parsed = parseTitleSync(rawText, itemInfo);
         const kind = itemInfo?.kind || (parsed.kind === 'episode' ? 'episode' : null);
 
         const includeYear = kind === 'movie' ? !config.HideYearMovies
@@ -426,7 +550,7 @@
             const order = getEpisodeTitleOrder(config);
             const partsByKey = {
                 series: { key: 'series', text: config.HideSeriesTitle ? '' : parsed.seriesName },
-                sxe: { key: 'sxe', text: config.HideSeasonEpisodeNumber ? '' : ('S' + parsed.season + ':E' + parsed.episode + (parsed.episodeEnd ? '-' + parsed.episodeEnd : '')) },
+                sxe: { key: 'sxe', text: config.HideSeasonEpisodeNumber ? '' : (typeof parsed.sxeText === 'string' ? parsed.sxeText : ('S' + parsed.season + ':E' + parsed.episode + (parsed.episodeEnd ? '-' + parsed.episodeEnd : ''))) },
                 title: { key: 'title', text: config.HideEpisodeTitle ? '' : parsed.episodeName }
             };
             orderedParts = order.map(function (k) { return partsByKey[k]; });
@@ -858,6 +982,10 @@
     // ============================================================
     let currentConfig = null;
     let currentItemInfo = null;
+    // Native title text the current item info belongs to (see
+    // applyTitleDisplay()); null = no title seen yet on this OSD visit.
+    let titleRawTextForItemInfo = null;
+    let itemInfoRequestSeq = 0;
 
     function applyAll() {
         if (!currentConfig) return;
@@ -870,9 +998,49 @@
         applyBottomRightOrder(currentConfig);
     }
 
+    // The server's session can still report the previous item for a
+    // moment after the next one started, so the fetched info is only
+    // used once its item name is part of the native title actually on
+    // screen (retried briefly). A newer request supersedes an older one.
+    // Jellyfin's own title text currently on screen (not our rebuilt one).
+    function getNativeTitleText() {
+        const el = document.querySelector('h3.' + TITLE_ID);
+        if (!el) return '';
+        return el.getAttribute(RAW_TEXT_MARKER_ATTR) === el.textContent
+            ? (el.dataset.jvosdTcSourceText || '')
+            : el.textContent;
+    }
+
+    // Jellyfin sets the favorite button's data-id to the current item in
+    // the same step as the title, so the item Id is the reliable check
+    // (a name check alone accepted "Toy Story" for "Toy Story 2"). Items
+    // that can't be rated have no data-id; the name check is used then.
+    function itemInfoMatchesOsd(info, titleText) {
+        const osdPage = getActiveOsdPage();
+        const ratingBtn = osdPage && osdPage.querySelector('.btnUserRating');
+        const liveId = ratingBtn && ratingBtn.getAttribute('data-id');
+        if (liveId && info.id) return info.id === liveId;
+        return !info.name || info.type === 'TvChannel' || titleText.includes(info.name);
+    }
+
     async function refreshItemInfoAndReapply() {
-        currentItemInfo = await getNowPlayingItemInfo();
-        applyAll();
+        const seq = ++itemInfoRequestSeq;
+        for (let attempt = 0; attempt < 8; attempt++) {
+            const info = await getNowPlayingItemInfo();
+            if (seq !== itemInfoRequestSeq) return;
+            // No title yet (Jellyfin sets it right after the page shows):
+            // retry rather than accept info that can't be checked. Live TV
+            // titles show the program, not the channel item's name, so the
+            // name check can't apply there.
+            const titleText = getNativeTitleText();
+            if (info && titleText && itemInfoMatchesOsd(info, titleText)) {
+                currentItemInfo = info;
+                applyAll();
+                return;
+            }
+            await new Promise(function (resolve) { setTimeout(resolve, 500); });
+            if (seq !== itemInfoRequestSeq) return;
+        }
     }
 
     // FIX for a real, serious bug found live: this used to be ONE
@@ -957,6 +1125,11 @@
     }
 
     function onVideoOsdShow() {
+        // Item info always belongs to one item; a new OSD visit starts
+        // without it (the fetch below brings the current one).
+        currentItemInfo = null;
+        titleRawTextForItemInfo = null;
+        itemInfoRequestSeq++;
         // Synchronous cache pass FIRST: runs to completion inside the
         // pageshow dispatch, i.e. before the first paint (see the
         // comment block above). applyAll() deliberately depends on
@@ -983,7 +1156,13 @@
         // meaningful delay in the common case. It doubles as the cache
         // refresh for the mechanism above.
         fetchPluginConfig().then(function (pluginConfig) {
-            if (!pluginConfig) return;
+            if (!pluginConfig) {
+                // No fresh config (e.g. non-admin: the endpoint is
+                // admin-only). The cached config applied above still needs
+                // the current item's info.
+                if (currentConfig) refreshItemInfoAndReapply();
+                return;
+            }
             writeCachedConfig(pluginConfig);
             currentConfig = pluginConfig;
             applyAll();
