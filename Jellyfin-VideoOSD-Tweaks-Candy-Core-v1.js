@@ -7,7 +7,7 @@
  * Candy Jellyfin plugin: every single thing it does (hiding configured
  * vanilla elements, ordering mixed vanilla/custom OSD elements) reads its
  * settings exclusively from the plugin's own server-side configuration via
- * ApiClient.getPluginConfiguration(). Without the plugin installed, this
+ * its endpoint VideoOSDTweaksCandy/ClientConfiguration. Without the plugin, this
  * script finds no configuration to read, does nothing, and changes nothing
  * about the page. Unlike the other 8 mods in this project, it has no
  * "standalone defaults" of its own, because it has no independent feature
@@ -43,7 +43,6 @@
 (function () {
     'use strict';
 
-    const PLUGIN_GUID = '468b1980-7a6c-4e45-a129-24825085ece4';
     const OSD_PAGE_ID = 'videoOsdPage';
 
     // FIX for a real bug found live: Jellyfin is a single-page app, this
@@ -58,12 +57,13 @@
     async function fetchPluginConfig() {
         const maxAttempts = 120;
         const delayMs = 250;
+        let failures = 0;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             // No ApiClient yet (jellyfin-web creates it once a server is
             // known, e.g. after the server selection page): wait without
             // using up an attempt, like the not-logged-in case below.
             if (!window.ApiClient) attempt--;
-            if (window.ApiClient && typeof ApiClient.getPluginConfiguration === 'function') {
+            if (window.ApiClient && typeof ApiClient.getJSON === 'function') {
                 // Not logged in yet (e.g. still on the login page): every
                 // request would only fail with 401, so wait without using up
                 // an attempt (the whole budget used to run out right there).
@@ -73,25 +73,22 @@
                     continue;
                 }
                 try {
-                    // The plugin's own endpoint (1.0.1.0+) is readable for every
-                    // signed-in user; Jellyfin's plugin configuration endpoint
-                    // is admin-only. Older plugin versions answer 404 there, then
-                    // the admin-only endpoint is used as before.
-                    let config;
-                    try {
-                        config = await ApiClient.getJSON(ApiClient.getUrl('VideoOSDTweaksCandy/ClientConfiguration'));
-                    } catch (endpointErr) {
-                        if (!(endpointErr && endpointErr.status === 404)) throw endpointErr;
-                        config = await ApiClient.getPluginConfiguration(PLUGIN_GUID);
-                    }
+                    // The plugin's own endpoint, readable for every signed-in user.
+                    const config = await ApiClient.getJSON(ApiClient.getUrl('VideoOSDTweaksCandy/ClientConfiguration'));
                     if (config) return config;
+                    throw new Error('empty configuration');
                 } catch (err) {
-                    // 403: the configuration endpoint is admin-only; 404: plugin
-                    // not installed (standalone use). Retrying can't change
+                    // 403: no access; 404: plugin not installed (standalone
+                    // use). Retrying can't change
                     // either, so stop and use the defaults instead of sending
                     // up to 120 failing requests.
                     if (err && (err.status === 403 || err.status === 404)) return null;
-                    // fall through, try again after the delay below
+                    // Server error (5xx), network error or empty answer: at most 3
+                    // retries, 0.5 / 1 / 2 s apart, then the defaults until the next
+                    // fetch (this used to send up to 120 requests in 30 s).
+                    if (++failures > 3) return null;
+                    await new Promise(function (resolve) { setTimeout(resolve, delayMs * Math.pow(2, failures)); });
+                    continue;
                 }
             }
             await new Promise(function (resolve) { setTimeout(resolve, delayMs); });
@@ -153,18 +150,29 @@
         // wrapper, so it is hidden here the same way.
         // [data-jvosd-mui-bar] = the same MUI video toolbar in the 10.10.7
         // "experimental" layout, which has no class of its own (getMuiBar()).
+        // The buttons carry [data-jvosd-mui-btn] (markMuiButtons()), so the
+        // rules need neither the has- nor the is- pseudo-class (older TV / browser engines).
+        // [data-jvosd-pre-hide-*] cover the frames between the header's
+        // mount and the first markMuiButtons() (React paints it before the
+        // OSD page's "pageshow"): set from the config alone (applyMuiPreHides()),
+        // they hide the icons wherever a MUI toolbar sits directly in a Box —
+        // in both versions only the video header does (the app toolbar sits
+        // in the AppBar header; jellyfin-web 10.10.7 / 12.1 sources).
         style.textContent = `.${FORCE_HIDE_CLASS} { display: none !important; }
 .jvosd-tc-title-sep { margin: 0 0.35em; }
 .jvosd-tc-title-year-sep { margin-left: 0.35em; }
 .videoOsdBottom .buttons > .volumeButtons { margin: 0 0.29em; }
 @media all and (max-width: 43em) { #videoOsdPage .videoOsdBottom .buttonMute { display: none !important; } }
-html[data-jvosd-mui-hide-back] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) button:has(svg[data-testid="ArrowBackIcon"]) { display: none !important; }
-html[data-jvosd-mui-hide-sync] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) button:has(svg[data-testid="GroupsIcon"]) { display: none !important; }
-html[data-jvosd-mui-hide-cast] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) button:has(svg[data-testid="CastIcon"]),
-html[data-jvosd-mui-hide-cast] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) .MuiBox-root:has(> button svg[data-testid="CastConnectedIcon"]) { display: none !important; }
-html[data-jvosd-mui-cast-first] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) button:has(svg[data-testid="CastIcon"]),
-html[data-jvosd-mui-cast-first] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) .MuiBox-root:has(> button svg[data-testid="CastConnectedIcon"]) { order: -1; }
-html[data-jvosd-mui-own-title] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) > .MuiTypography-root:not(.jvosd-tc-mui-title) { display: none !important; }`;
+html[data-jvosd-mui-hide-back] [data-jvosd-mui-btn="back"] { display: none !important; }
+html[data-jvosd-mui-hide-sync] [data-jvosd-mui-btn="sync"] { display: none !important; }
+html[data-jvosd-mui-hide-cast] [data-jvosd-mui-btn="cast"] { display: none !important; }
+html[data-jvosd-mui-cast-first] [data-jvosd-mui-btn="cast"] { order: -1; }
+html[data-jvosd-pre-hide-back] .MuiBox-root > .MuiToolbar-root svg[data-testid="ArrowBackIcon"],
+html[data-jvosd-pre-hide-sync] .MuiBox-root > .MuiToolbar-root svg[data-testid="GroupsIcon"],
+html[data-jvosd-pre-hide-cast] .MuiBox-root > .MuiToolbar-root svg[data-testid="CastIcon"],
+html[data-jvosd-pre-hide-cast] .MuiBox-root > .MuiToolbar-root svg[data-testid="CastConnectedIcon"] { visibility: hidden !important; }
+html[data-jvosd-mui-own-title] .videoOsd-appBar > .MuiTypography-root:not(.jvosd-tc-mui-title),
+html[data-jvosd-mui-own-title] [data-jvosd-mui-bar] > .MuiTypography-root:not(.jvosd-tc-mui-title) { display: none !important; }`;
         document.head.appendChild(style);
     }
 
@@ -335,13 +343,13 @@ html[data-jvosd-mui-own-title] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) > .Mu
     let cachedItemInfoName = null;
 
     async function getNowPlayingItemInfo() {
-        if (!window.ApiClient?.getSessions) return null;
+        if (!(window.ApiClient && window.ApiClient.getSessions)) return null;
         try {
             const sessions = await ApiClient.getSessions({ deviceId: ApiClient.deviceId() });
             const session =
                 sessions.find(function (s) { return s.NowPlayingItem && s.PlayState; }) ||
                 sessions.find(function (s) { return s.NowPlayingItem; });
-            const item = session?.NowPlayingItem;
+            const item = session && session.NowPlayingItem;
             if (!item) return null;
 
             const itemName = item.Id || item.Name || 'unknown';
@@ -541,7 +549,7 @@ html[data-jvosd-mui-own-title] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) > .Mu
         // our own render. Likewise every title setting is part of the
         // signature, so a changed setting re-renders even for the same
         // title.
-        const itemInfoSignature = (itemInfo?.kind || '') + '\u0000' + (itemInfo?.originalTitle || '') + '\u0000' + (itemInfo?.seriesName || '') + '\u0000' + (itemInfo?.name || '');
+        const itemInfoSignature = ((itemInfo && itemInfo.kind) || '') + '\u0000' + ((itemInfo && itemInfo.originalTitle) || '') + '\u0000' + ((itemInfo && itemInfo.seriesName) || '') + '\u0000' + ((itemInfo && itemInfo.name) || '');
         const configSignature = [
             config.HideTitleBar, config.HideSeriesTitle, config.HideSeasonEpisodeNumber, config.HideEpisodeTitle,
             config.HideYearMovies, config.HideYearEpisodes, config.HideYearVideos, config.ShowOriginalTitleMovies,
@@ -561,7 +569,7 @@ html[data-jvosd-mui-own-title] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) > .Mu
         el.classList.remove(FORCE_HIDE_CLASS);
 
         const parsed = parseTitleSync(rawText, itemInfo);
-        const kind = itemInfo?.kind || (parsed.kind === 'episode' ? 'episode' : null);
+        const kind = (itemInfo && itemInfo.kind) || (parsed.kind === 'episode' ? 'episode' : null);
 
         const includeYear = kind === 'movie' ? !config.HideYearMovies
             : kind === 'episode' ? !config.HideYearEpisodes
@@ -589,7 +597,7 @@ html[data-jvosd-mui-own-title] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) > .Mu
             // title should REPLACE the normal title entirely, falling
             // back to the normal title if no original title exists (or
             // is identical to it, nothing meaningful to switch to).
-            const displayName = (kind === 'movie' && config.ShowOriginalTitleMovies && itemInfo?.originalTitle && itemInfo.originalTitle !== parsed.name)
+            const displayName = (kind === 'movie' && config.ShowOriginalTitleMovies && itemInfo && itemInfo.originalTitle && itemInfo.originalTitle !== parsed.name)
                 ? itemInfo.originalTitle
                 : parsed.name;
             orderedParts = [{ key: 'name', text: displayName }];
@@ -757,6 +765,15 @@ html[data-jvosd-mui-own-title] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) > .Mu
         }
     }
 
+    // Config-only flags for the first frames of the MUI video header (see
+    // ensureCoreStyle()); independent of the OSD state, they match nothing
+    // outside the video header.
+    function applyMuiPreHides(config) {
+        setRootFlag('data-jvosd-pre-hide-back', !!(config && config.HideBackButton));
+        setRootFlag('data-jvosd-pre-hide-sync', !!(config && config.HideSyncPlayButton));
+        setRootFlag('data-jvosd-pre-hide-cast', !!(config && config.HideCastButton));
+    }
+
     // The MUI video toolbar: 12.1 modern gives it the class videoOsd-appBar;
     // the 10.10.7 "experimental" layout renders the same toolbar (same
     // icons) without any class and without a title; it is recognised by
@@ -780,9 +797,34 @@ html[data-jvosd-mui-own-title] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) > .Mu
         return toolbar || null;
     }
 
+    // Marks the header buttons by their MUI icon (independent of the UI
+    // language): back, SyncPlay, cast — for the cast-connected state the
+    // Box around its button. React re-creates a button on some state
+    // changes; the observers call this again and the new node is marked.
+    const MUI_BTN_ATTR = 'data-jvosd-mui-btn';
+
+    function markMuiButtons(bar) {
+        const marks = [
+            ['back', 'button', 'ArrowBackIcon'],
+            ['sync', 'button', 'GroupsIcon'],
+            ['cast', 'button', 'CastIcon'],
+            ['cast', '.MuiBox-root', 'CastConnectedIcon']
+        ];
+        marks.forEach(function (m) {
+            Array.prototype.forEach.call(bar.querySelectorAll('svg[data-testid="' + m[2] + '"]'), function (svg) {
+                let el = svg.closest('button');
+                if (el && m[1] !== 'button') el = el.parentElement && el.parentElement.closest(m[1]);
+                if (el && bar.contains(el) && el !== bar && el.getAttribute(MUI_BTN_ATTR) !== m[0]) {
+                    el.setAttribute(MUI_BTN_ATTR, m[0]);
+                }
+            });
+        });
+    }
+
     function applyMuiHeader(config) {
         const bar = isVideoOsdActive() ? getMuiBar() : null;
         const on = !!bar;
+        if (bar) markMuiButtons(bar);
 
         setRootFlag('data-jvosd-mui-hide-back', on && config.HideBackButton);
         setRootFlag('data-jvosd-mui-hide-sync', on && config.HideSyncPlayButton);
@@ -1034,7 +1076,7 @@ html[data-jvosd-mui-own-title] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) > .Mu
         const osdPage = getActiveOsdPage();
         if (!osdPage) return;
         const favBtn = osdPage.querySelector('.videoOsdBottom .btnUserRating');
-        const container = favBtn?.parentNode;
+        const container = favBtn && favBtn.parentNode;
         if (!container) return;
 
         // Mute moves out of the wrapper exactly once (guarded: only
@@ -1050,18 +1092,15 @@ html[data-jvosd-mui-own-title] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) > .Mu
         const mute = container.querySelector('.buttonMute');
         if (mute && !mute.classList.contains('hide-mouse-idle-tv')) mute.classList.add('hide-mouse-idle-tv');
 
-        // "volumeslider" resolves to the native wrapper when present.
-        // The fallback to the bare slider container only exists for a
-        // transitional SPA session in which an OLDER core version
-        // already dissolved the wrapper before this version loaded; on
-        // any fresh page load the wrapper always exists.
+        // "volumeslider" = the native ".volumeButtons" wrapper (the slider;
+        // mute is moved out of it above). Present in 10.10.7 and 12.x.
         const idMap = {
             favorite: '.btnUserRating',
             episodepreview: '#popupPreviewButton',
             subtitles: '.btnSubtitles',
             audio: '.btnAudio',
             mute: '.buttonMute',
-            volumeslider: '.volumeButtons, .osdVolumeSliderContainer',
+            volumeslider: '.volumeButtons',
             settings: '.btnVideoOsdSettings',
             pip: '.btnPip',
             fullscreen: '.btnFullscreen',
@@ -1106,6 +1145,7 @@ html[data-jvosd-mui-own-title] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) > .Mu
         applyHeaderButtonHides(currentConfig);
         applyTitleDisplay(currentConfig, currentItemInfo);
         applyTopRightOrder(currentConfig);
+        applyMuiPreHides(currentConfig);
         applyMuiHeader(currentConfig);
         applyBottomLeftOrder(currentConfig);
         applyBottomRightOrder(currentConfig);
@@ -1379,5 +1419,33 @@ html[data-jvosd-mui-own-title] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) > .Mu
     // to duplicate that here.
     if (isVideoOsdActive()) {
         onVideoOsdShow();
+    } else {
+        // Before the first video: the header can mount before "pageshow".
+        // The cached config covers a returning browser at once; one fetch
+        // per page load covers the first visit and a config saved since (the
+        // same endpoint the OSD visit uses). Signed out (login page) nothing
+        // is sent and no timer runs: the fetch waits for the first view
+        // change ("viewshow", both versions' viewManager) or hash change
+        // with a token.
+        ensureCoreStyle();
+        applyMuiPreHides(readCachedConfig());
+        let preHideFetchStarted = false;
+        const startPreHideFetch = function () {
+            if (preHideFetchStarted) return;
+            if (!window.ApiClient || typeof ApiClient.accessToken !== 'function' || !ApiClient.accessToken()) return;
+            preHideFetchStarted = true;
+            document.removeEventListener('viewshow', startPreHideFetch, true);
+            window.removeEventListener('hashchange', startPreHideFetch);
+            fetchPluginConfig().then(function (pluginConfig) {
+                if (!pluginConfig) return;
+                writeCachedConfig(pluginConfig);
+                applyMuiPreHides(pluginConfig);
+            }).catch(function () { /* the OSD visit fetches again */ });
+        };
+        startPreHideFetch();
+        if (!preHideFetchStarted) {
+            document.addEventListener('viewshow', startPreHideFetch, true);
+            window.addEventListener('hashchange', startPreHideFetch);
+        }
     }
 })();
