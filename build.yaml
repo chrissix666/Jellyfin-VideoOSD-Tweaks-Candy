@@ -24,7 +24,7 @@ owner: "chrissix666"
 artifacts:
   - "VideoOSDTweaksCandyLoader.dll"
 changelog: >
-  2.0.0.0 (Jellyfin 12.0+): For Jellyfin 12.0 and later, same features as 1.1.0.0; the scripts support the new video header. A-B Loop, Screenshot and Download can be switched on for phones, tablets and TV.
+  2.0.0.0 (Jellyfin 12.0+): For Jellyfin 12.0+, same features as 1.1.0.0; the scripts support the new video header. A-B Loop, Screenshot and Download can be switched on for phones, tablets and TV.
   1.1.0.0 (Jellyfin 10.10.7): For Jellyfin 10.10.7. Not for 10.11 (use 2.0.0.0 on 12.0+). Speed keys step through your custom speed list, the settings menu shows custom speeds, browser back closes only the Customs menu, download links use ApiKey. A-B Loop, Screenshot and Download can be switched on for phones, tablets and TV.
   1.0.1.0: Settings now apply for all users (not only admins), script tags stay up to date without File Transformation and are removed on uninstall, config page save fixes.
   1.0.0.0: Initial release.
