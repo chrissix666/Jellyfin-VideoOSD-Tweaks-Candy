@@ -20,9 +20,9 @@
                 "version": "1.1.0.0",
                 "targetAbi": "10.10.7.0",
                 "sourceUrl": "https://github.com/chrissix666/Jellyfin-VideoOSD-Tweaks-Candy/releases/download/v1.1.0.0/VideoOSD.Tweaks.Candy_1.1.0.0_jellyfin-10.10.7.zip",
-                "checksum": "e61ad0b07e9a4914b1b22e6a58187471",
+                "checksum": "c31cf75f1bbfcf71f1f59123c64ea856",
                 "timestamp": "2026-10-03T00:00:00Z",
-                "changelog": "For Jellyfin 10.10.x. Not for 10.11 (use 2.0.0.0 on 12.0+). (Jellyfin 10.10.7) Speed keys step through your custom speed list, the settings menu shows custom speeds, browser back closes only the Customs menu, download links use ApiKey. A-B Loop, Screenshot and Download can be switched on for phones, tablets and TV."
+                "changelog": "For Jellyfin 10.10.7. Not for 10.11 (use 2.0.0.0 on 12.0+). (Jellyfin 10.10.7) Speed keys step through your custom speed list, the settings menu shows custom speeds, browser back closes only the Customs menu, download links use ApiKey. A-B Loop, Screenshot and Download can be switched on for phones, tablets and TV."
             },
             {
                 "version": "1.0.1.0",
