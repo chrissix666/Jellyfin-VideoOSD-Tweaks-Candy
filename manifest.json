@@ -9,6 +9,22 @@
         "imageUrl": "https://raw.githubusercontent.com/chrissix666/Jellyfin-VideoOSD-Tweaks-Candy/main/logo.png",
         "versions": [
             {
+                "version": "2.0.0.0",
+                "targetAbi": "12.1.0.0",
+                "sourceUrl": "https://github.com/chrissix666/Jellyfin-VideoOSD-Tweaks-Candy/releases/download/v2.0.0.0/VideoOSD.Tweaks.Candy_2.0.0.0_jellyfin-12.1.zip",
+                "checksum": "43f040944856883dbbf4de93e53fa2ae",
+                "timestamp": "2026-10-02T05:01:01Z",
+                "changelog": "(Jellyfin 12.1) First build for Jellyfin 12.1, same features as 1.1.0.0; the scripts support the new 12.1 video header."
+            },
+            {
+                "version": "1.1.0.0",
+                "targetAbi": "10.10.7.0",
+                "sourceUrl": "https://github.com/chrissix666/Jellyfin-VideoOSD-Tweaks-Candy/releases/download/v1.1.0.0/VideoOSD.Tweaks.Candy_1.1.0.0_jellyfin-10.10.7.zip",
+                "checksum": "d7dd141b5eef09158558a833ed0b6ce9",
+                "timestamp": "2026-10-02T05:00:58Z",
+                "changelog": "(Jellyfin 10.10.7) Speed keys step through your custom speed list, the settings menu shows custom speeds, browser back closes only the Customs menu, download links use ApiKey."
+            },
+            {
                 "version": "1.0.1.0",
                 "targetAbi": "10.10.7.0",
                 "sourceUrl": "https://github.com/chrissix666/Jellyfin-VideoOSD-Tweaks-Candy/releases/download/v1.0.1.0/VideoOSD.Tweaks.Candy_1.0.1.0.zip",
