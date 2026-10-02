@@ -12,9 +12,9 @@
                 "version": "2.0.0.0",
                 "targetAbi": "12.0.0.0",
                 "sourceUrl": "https://github.com/chrissix666/Jellyfin-VideoOSD-Tweaks-Candy/releases/download/v2.0.0.0/VideoOSD.Tweaks.Candy_2.0.0.0_jellyfin-12.x.zip",
-                "checksum": "3ef2c291272f8bbfe46831ef28a47d88",
+                "checksum": "bf0bb6acf14d92f88da91a681f530bf1",
                 "timestamp": "2026-10-03T00:00:00Z",
-                "changelog": "(Jellyfin 12.0+) For Jellyfin 12.0 and later, same features as 1.1.0.0; the scripts support the new video header. A-B Loop, Screenshot and Download can be switched on for phones, tablets and TV."
+                "changelog": "(Jellyfin 12.0+) For Jellyfin 12.0+, same features as 1.1.0.0; the scripts support the new video header. A-B Loop, Screenshot and Download can be switched on for phones, tablets and TV."
             },
             {
                 "version": "1.1.0.0",
