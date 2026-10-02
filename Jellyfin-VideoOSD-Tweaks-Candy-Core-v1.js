@@ -148,17 +148,23 @@
         // sets the matching flag on <html>. Buttons are found by their MUI
         // icon (data-testid), independent of the UI language. 10.10.7 and
         // the legacy layouts have no .videoOsd-appBar, so nothing matches.
+        // Mute below 43em: Jellyfin hides .volumeButtons (mute + slider)
+        // there (videoosd.scss); BottomRightOrder moves mute out of that
+        // wrapper, so it is hidden here the same way.
+        // [data-jvosd-mui-bar] = the same MUI video toolbar in the 10.10.7
+        // "experimental" layout, which has no class of its own (getMuiBar()).
         style.textContent = `.${FORCE_HIDE_CLASS} { display: none !important; }
 .jvosd-tc-title-sep { margin: 0 0.35em; }
 .jvosd-tc-title-year-sep { margin-left: 0.35em; }
 .videoOsdBottom .buttons > .volumeButtons { margin: 0 0.29em; }
-html[data-jvosd-mui-hide-back] .videoOsd-appBar button:has(svg[data-testid="ArrowBackIcon"]) { display: none !important; }
-html[data-jvosd-mui-hide-sync] .videoOsd-appBar button:has(svg[data-testid="GroupsIcon"]) { display: none !important; }
-html[data-jvosd-mui-hide-cast] .videoOsd-appBar button:has(svg[data-testid="CastIcon"]),
-html[data-jvosd-mui-hide-cast] .videoOsd-appBar .MuiBox-root:has(> button svg[data-testid="CastConnectedIcon"]) { display: none !important; }
-html[data-jvosd-mui-cast-first] .videoOsd-appBar button:has(svg[data-testid="CastIcon"]),
-html[data-jvosd-mui-cast-first] .videoOsd-appBar .MuiBox-root:has(> button svg[data-testid="CastConnectedIcon"]) { order: -1; }
-html[data-jvosd-mui-own-title] .videoOsd-appBar > .MuiTypography-root:not(.jvosd-tc-mui-title) { display: none !important; }`;
+@media all and (max-width: 43em) { #videoOsdPage .videoOsdBottom .buttonMute { display: none !important; } }
+html[data-jvosd-mui-hide-back] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) button:has(svg[data-testid="ArrowBackIcon"]) { display: none !important; }
+html[data-jvosd-mui-hide-sync] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) button:has(svg[data-testid="GroupsIcon"]) { display: none !important; }
+html[data-jvosd-mui-hide-cast] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) button:has(svg[data-testid="CastIcon"]),
+html[data-jvosd-mui-hide-cast] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) .MuiBox-root:has(> button svg[data-testid="CastConnectedIcon"]) { display: none !important; }
+html[data-jvosd-mui-cast-first] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) button:has(svg[data-testid="CastIcon"]),
+html[data-jvosd-mui-cast-first] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) .MuiBox-root:has(> button svg[data-testid="CastConnectedIcon"]) { order: -1; }
+html[data-jvosd-mui-own-title] :is(.videoOsd-appBar, [data-jvosd-mui-bar]) > .MuiTypography-root:not(.jvosd-tc-mui-title) { display: none !important; }`;
         document.head.appendChild(style);
     }
 
@@ -751,8 +757,31 @@ html[data-jvosd-mui-own-title] .videoOsd-appBar > .MuiTypography-root:not(.jvosd
         }
     }
 
+    // The MUI video toolbar: 12.1 modern gives it the class videoOsd-appBar;
+    // the 10.10.7 "experimental" layout renders the same toolbar (same
+    // icons) without any class and without a title; it is recognised by
+    // those icons (back / SyncPlay / cast) and by having no drawer menu
+    // button (that would be an app toolbar), and gets our own attribute
+    // (React leaves attributes it does not manage alone). The legacy
+    // layouts have no MUI toolbar at all.
+    const MUI_BAR_ATTR = 'data-jvosd-mui-bar';
+    const MUI_BAR_ICONS = 'svg[data-testid="ArrowBackIcon"], svg[data-testid="GroupsIcon"], ' +
+        'svg[data-testid="CastIcon"], svg[data-testid="CastConnectedIcon"]';
+
+    function getMuiBar() {
+        const bar = document.querySelector('.videoOsd-appBar');
+        if (bar) return bar;
+        const toolbar = Array.prototype.find.call(document.querySelectorAll('.MuiToolbar-root'), function (t) {
+            return !t.closest('.dialogContainer') &&
+                !!t.querySelector(MUI_BAR_ICONS) &&
+                !t.querySelector('svg[data-testid="MenuIcon"]');
+        });
+        if (toolbar && !toolbar.hasAttribute(MUI_BAR_ATTR)) toolbar.setAttribute(MUI_BAR_ATTR, '');
+        return toolbar || null;
+    }
+
     function applyMuiHeader(config) {
-        const bar = isVideoOsdActive() ? document.querySelector('.videoOsd-appBar') : null;
+        const bar = isVideoOsdActive() ? getMuiBar() : null;
         const on = !!bar;
 
         setRootFlag('data-jvosd-mui-hide-back', on && config.HideBackButton);
@@ -1142,7 +1171,10 @@ html[data-jvosd-mui-own-title] .videoOsd-appBar > .MuiTypography-root:not(.jvosd
     function startOsdObserver() {
         const osdPage = getActiveOsdPage();
         if (!osdPage) return;
-        if (osdObserver && observedOsdPage === osdPage) return;
+        if (osdObserver && observedOsdPage === osdPage) {
+            startMuiObserver();
+            return;
+        }
         stopOsdObserver();
         observedOsdPage = osdPage;
         osdObserver = new MutationObserver(function () {
@@ -1154,13 +1186,67 @@ html[data-jvosd-mui-own-title] .videoOsd-appBar > .MuiTypography-root:not(.jvosd
             attributes: true,
             attributeFilter: ['class']
         });
+        startMuiObserver();
     }
 
     function stopOsdObserver() {
+        stopMuiObserver();
         if (!osdObserver) return;
         osdObserver.disconnect();
         osdObserver = null;
         observedOsdPage = null;
+    }
+
+    // Jellyfin 12.1 modern: the MUI video header and the legacy title it is
+    // mirrored from live OUTSIDE #videoOsdPage, so the observer above never
+    // sees them. When the header mounts or the title arrives after the
+    // config (slow devices), nothing inside the OSD page changes on a paused
+    // video and the header settings stayed unapplied. This observer watches
+    // the header box (or, until it exists, the body for its arrival) and the
+    // legacy title while the OSD is active; applyMuiHeader() only writes on
+    // a difference, so its own changes settle at once.
+    const MUI_WAIT_MS = 5000;
+    let muiObserver = null;
+    let muiObserverTarget = null;
+    let muiObserverTimer = null;
+
+    function startMuiObserver() {
+        if (!isVideoOsdActive()) return;
+        const bar = getMuiBar();
+        const target = bar ? (bar.closest('.osdHeader') || bar.parentNode) : document.body;
+        if (muiObserver && muiObserverTarget === target) return;
+        stopMuiObserver();
+        muiObserverTarget = target;
+        muiObserver = new MutationObserver(function () {
+            if (!currentConfig) return;
+            if (!bar && getMuiBar()) {
+                // The header has mounted: narrow the watch to it.
+                startMuiObserver();
+            }
+            applyTitleDisplay(currentConfig, currentItemInfo);
+            applyMuiHeader(currentConfig);
+        });
+        muiObserver.observe(target, { childList: true, subtree: true, characterData: !!bar });
+        const title = document.querySelector('h3.' + TITLE_ID);
+        if (bar && title) muiObserver.observe(title, { childList: true, subtree: true, characterData: true });
+        if (!bar) {
+            // Legacy layouts and 10.10.7 never mount this header: stop
+            // waiting for it after a few seconds.
+            muiObserverTimer = setTimeout(function () {
+                if (muiObserverTarget === document.body) stopMuiObserver();
+            }, MUI_WAIT_MS);
+        }
+    }
+
+    function stopMuiObserver() {
+        if (muiObserverTimer) {
+            clearTimeout(muiObserverTimer);
+            muiObserverTimer = null;
+        }
+        if (!muiObserver) return;
+        muiObserver.disconnect();
+        muiObserver = null;
+        muiObserverTarget = null;
     }
 
     // CONFIG CACHE for instant, pre-paint layout (user-approved after
