@@ -141,10 +141,24 @@
         // consistently at ANY sorted position. Direct-child selector
         // on purpose: it only ever matches this exact wrapper in this
         // exact bar.
+        // Jellyfin 12.1, modern (MUI) layout: the video header is a React
+        // toolbar (.videoOsd-appBar), the legacy header elements are
+        // rendered but hidden. React owns those nodes, so they are never
+        // changed directly: these rules act only while applyMuiHeader()
+        // sets the matching flag on <html>. Buttons are found by their MUI
+        // icon (data-testid), independent of the UI language. 10.10.7 and
+        // the legacy layouts have no .videoOsd-appBar, so nothing matches.
         style.textContent = `.${FORCE_HIDE_CLASS} { display: none !important; }
 .jvosd-tc-title-sep { margin: 0 0.35em; }
 .jvosd-tc-title-year-sep { margin-left: 0.35em; }
-.videoOsdBottom .buttons > .volumeButtons { margin: 0 0.29em; }`;
+.videoOsdBottom .buttons > .volumeButtons { margin: 0 0.29em; }
+html[data-jvosd-mui-hide-back] .videoOsd-appBar button:has(svg[data-testid="ArrowBackIcon"]) { display: none !important; }
+html[data-jvosd-mui-hide-sync] .videoOsd-appBar button:has(svg[data-testid="GroupsIcon"]) { display: none !important; }
+html[data-jvosd-mui-hide-cast] .videoOsd-appBar button:has(svg[data-testid="CastIcon"]),
+html[data-jvosd-mui-hide-cast] .videoOsd-appBar .MuiBox-root:has(> button svg[data-testid="CastConnectedIcon"]) { display: none !important; }
+html[data-jvosd-mui-cast-first] .videoOsd-appBar button:has(svg[data-testid="CastIcon"]),
+html[data-jvosd-mui-cast-first] .videoOsd-appBar .MuiBox-root:has(> button svg[data-testid="CastConnectedIcon"]) { order: -1; }
+html[data-jvosd-mui-own-title] .videoOsd-appBar > .MuiTypography-root:not(.jvosd-tc-mui-title) { display: none !important; }`;
         document.head.appendChild(style);
     }
 
@@ -280,12 +294,18 @@
         if (plainMatch && itemInfo && itemInfo.kind === 'episode' && itemInfo.seriesName && itemInfo.name) {
             const body = plainMatch[1];
             const prefix = itemInfo.seriesName + ' - ';
-            const suffix = ' - ' + itemInfo.name;
+            // The special label ("Extra - {0}") is joined to the episode
+            // name with " - " or, in some translations, " – " (en dash;
+            // German since Jellyfin 12.1).
+            const suffixes = [' - ' + itemInfo.name, ' \u2013 ' + itemInfo.name];
             let sxeText = null;
             if (body === prefix + itemInfo.name) {
                 sxeText = '';
-            } else if (body.startsWith(prefix) && body.endsWith(suffix) && body.length > prefix.length + suffix.length) {
-                sxeText = body.slice(prefix.length, body.length - suffix.length);
+            } else if (body.startsWith(prefix)) {
+                const suffix = suffixes.find(function (s) {
+                    return body.endsWith(s) && body.length > prefix.length + s.length;
+                });
+                if (suffix) sxeText = body.slice(prefix.length, body.length - suffix.length);
             }
             if (sxeText !== null) {
                 return {
@@ -711,6 +731,69 @@
         container.insertBefore(cast, syncNext);
     }
 
+    // ============================================================
+    // JELLYFIN 12.1 MODERN (MUI) VIDEO HEADER
+    // ============================================================
+    // Same settings as the legacy header above, applied through the CSS
+    // flags of ensureCoreStyle(). The title is rendered into the (hidden)
+    // legacy h3.pageTitle by applyTitleDisplay() exactly as on 10.10.7 and
+    // mirrored into an own element next to the React title, which is
+    // hidden; the React title's text is never written to (React would
+    // overwrite it on the next title change).
+    const MUI_TITLE_CLASS = 'jvosd-tc-mui-title';
+
+    function setRootFlag(name, on) {
+        const root = document.documentElement;
+        if (on) {
+            if (!root.hasAttribute(name)) root.setAttribute(name, '');
+        } else if (root.hasAttribute(name)) {
+            root.removeAttribute(name);
+        }
+    }
+
+    function applyMuiHeader(config) {
+        const bar = isVideoOsdActive() ? document.querySelector('.videoOsd-appBar') : null;
+        const on = !!bar;
+
+        setRootFlag('data-jvosd-mui-hide-back', on && config.HideBackButton);
+        setRootFlag('data-jvosd-mui-hide-sync', on && config.HideSyncPlayButton);
+        setRootFlag('data-jvosd-mui-hide-cast', on && config.HideCastButton);
+
+        let castFirst = false;
+        if (typeof config.TopRightOrder === 'string' && config.TopRightOrder) {
+            const order = config.TopRightOrder.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+            const castIdx = order.indexOf('cast');
+            const syncIdx = order.indexOf('sync');
+            castFirst = castIdx !== -1 && syncIdx !== -1 && castIdx < syncIdx;
+        }
+        setRootFlag('data-jvosd-mui-cast-first', on && castFirst);
+
+        const ownTitle = on && needsTitleIntervention(config);
+
+        const existing = document.querySelectorAll('.' + MUI_TITLE_CLASS);
+        const typo = bar && bar.querySelector(':scope > .MuiTypography-root:not(.' + MUI_TITLE_CLASS + ')');
+        const source = document.querySelector('h3.' + TITLE_ID);
+        if (!ownTitle || config.HideTitleBar || !typo || !source) {
+            existing.forEach(function (el) { el.remove(); });
+            // The React title is hidden only when nothing is to be shown
+            // (HideTitleBar) or the own title replaces it, never while the
+            // mirror can't be built yet (no title at all).
+            setRootFlag('data-jvosd-mui-own-title', ownTitle && !!config.HideTitleBar);
+            return;
+        }
+        setRootFlag('data-jvosd-mui-own-title', true);
+
+        let mirror = existing[0];
+        if (!mirror || mirror.parentNode !== bar || mirror.previousElementSibling !== typo) {
+            existing.forEach(function (el) { el.remove(); });
+            mirror = document.createElement(typo.tagName.toLowerCase());
+            typo.after(mirror);
+        }
+        const cls = typo.className + ' ' + MUI_TITLE_CLASS;
+        if (mirror.className !== cls) mirror.className = cls;
+        if (mirror.innerHTML !== source.innerHTML) mirror.innerHTML = source.innerHTML;
+    }
+
     function applyBottomLeftOrder(config) {
         const osdPage = getActiveOsdPage();
         if (!osdPage) return;
@@ -994,6 +1077,7 @@
         applyHeaderButtonHides(currentConfig);
         applyTitleDisplay(currentConfig, currentItemInfo);
         applyTopRightOrder(currentConfig);
+        applyMuiHeader(currentConfig);
         applyBottomLeftOrder(currentConfig);
         applyBottomRightOrder(currentConfig);
     }
