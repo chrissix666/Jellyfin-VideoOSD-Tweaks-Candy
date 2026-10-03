@@ -12,33 +12,33 @@
                 "version": "2.0.0.0",
                 "targetAbi": "12.0.0.0",
                 "sourceUrl": "https://github.com/chrissix666/Jellyfin-VideoOSD-Tweaks-Candy/releases/download/v2.0.0.0/VideoOSD.Tweaks.Candy_2.0.0.0_jellyfin-12.x.zip",
-                "checksum": "bf0bb6acf14d92f88da91a681f530bf1",
+                "checksum": "cbff5624c12578ec66a87403db74eb88",
                 "timestamp": "2026-10-03T00:00:00Z",
-                "changelog": "(Jellyfin 12.0+) For Jellyfin 12.0+, same features as 1.1.0.0; the scripts support the new video header. A-B Loop, Screenshot and Download can be switched on for phones, tablets and TV."
+                "changelog": "Release for Jellyfin 12.0+"
             },
             {
                 "version": "1.1.0.0",
                 "targetAbi": "10.10.7.0",
                 "sourceUrl": "https://github.com/chrissix666/Jellyfin-VideoOSD-Tweaks-Candy/releases/download/v1.1.0.0/VideoOSD.Tweaks.Candy_1.1.0.0_jellyfin-10.10.7.zip",
-                "checksum": "c31cf75f1bbfcf71f1f59123c64ea856",
+                "checksum": "c8a6d4c4642a4d05a1899e2b3c605c8a",
                 "timestamp": "2026-10-03T00:00:00Z",
-                "changelog": "For Jellyfin 10.10.7. Not for 10.11 (use 2.0.0.0 on 12.0+). (Jellyfin 10.10.7) Speed keys step through your custom speed list, the settings menu shows custom speeds, browser back closes only the Customs menu, download links use ApiKey. A-B Loop, Screenshot and Download can be switched on for phones, tablets and TV."
+                "changelog": "Release for Jellyfin 10.10.7"
             },
             {
                 "version": "1.0.1.0",
                 "targetAbi": "10.10.7.0",
                 "sourceUrl": "https://github.com/chrissix666/Jellyfin-VideoOSD-Tweaks-Candy/releases/download/v1.0.1.0/VideoOSD.Tweaks.Candy_1.0.1.0_jellyfin-10.10.7.zip",
-                "checksum": "29f7b2243e45cf631559eff02706370d",
+                "checksum": "41e087e51b28edcf2a1d26ddbafa517c",
                 "timestamp": "2026-09-28T23:43:22Z",
-                "changelog": "Settings now apply for all users (not only admins), script tags stay up to date without File Transformation and are removed on uninstall, config page save fixes."
+                "changelog": "Release for Jellyfin 10.10.7"
             },
             {
                 "version": "1.0.0.0",
                 "targetAbi": "10.10.7.0",
                 "sourceUrl": "https://github.com/chrissix666/Jellyfin-VideoOSD-Tweaks-Candy/releases/download/v1.0.0.0/VideoOSD.Tweaks.Candy_1.0.0.0_jellyfin-10.10.7.zip",
-                "checksum": "28e2460997858df1bc7aa2c4994c66f1",
+                "checksum": "7ccc91b945766ec7617df451b29ff32b",
                 "timestamp": "2026-08-29T00:00:00Z",
-                "changelog": "Initial release."
+                "changelog": "Release for Jellyfin 10.10.7"
             }
         ]
     }
