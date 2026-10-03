@@ -440,7 +440,7 @@ If that happens: open your browser's DevTools (right-click anywhere, **Inspect**
 
 ## Developed For & Tested On
 
-- Designed and written for Jellyfin Web 10.10.7
+- Designed and written for Jellyfin Web 10.10.7 and 12.0+
 - Google Chrome
 - Windows 11
 
