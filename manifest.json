@@ -12,7 +12,7 @@
                 "version": "2.0.0.0",
                 "targetAbi": "12.0.0.0",
                 "sourceUrl": "https://github.com/chrissix666/Jellyfin-VideoOSD-Tweaks-Candy/releases/download/v2.0.0.0/VideoOSD.Tweaks.Candy_2.0.0.0_jellyfin-12.x.zip",
-                "checksum": "cbff5624c12578ec66a87403db74eb88",
+                "checksum": "2ef53f09af1a1ce46af9a0fad5d5b976",
                 "timestamp": "2026-10-03T00:00:00Z",
                 "changelog": "Release for Jellyfin 12.0+"
             },
@@ -20,7 +20,7 @@
                 "version": "1.1.0.0",
                 "targetAbi": "10.10.7.0",
                 "sourceUrl": "https://github.com/chrissix666/Jellyfin-VideoOSD-Tweaks-Candy/releases/download/v1.1.0.0/VideoOSD.Tweaks.Candy_1.1.0.0_jellyfin-10.10.7.zip",
-                "checksum": "c8a6d4c4642a4d05a1899e2b3c605c8a",
+                "checksum": "e24155282da0f5461b4a5a0fad3878ee",
                 "timestamp": "2026-10-03T00:00:00Z",
                 "changelog": "Release for Jellyfin 10.10.7"
             },
