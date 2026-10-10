@@ -1074,9 +1074,12 @@ html[data-jvosd-mui-own-title] [data-jvosd-mui-bar] > .MuiTypography-root:not(.j
         // then got sorted instead of the OSD whenever that page sat in
         // an earlier slot.
         const osdPage = getActiveOsdPage();
-        if (!osdPage) return;
-        const favBtn = osdPage.querySelector('.videoOsdBottom .btnUserRating');
+        const favBtn = osdPage && osdPage.querySelector('.videoOsdBottom .btnUserRating');
         const container = favBtn && favBtn.parentNode;
+        // html[data-jvosd-order-br]: this zone is sorted here right now.
+        // The VisoMaster Bridge plugin reads it and then leaves its own
+        // button where it is (contract with VisoMaster, 2026-10-10).
+        setRootFlag('data-jvosd-order-br', !!container);
         if (!container) return;
 
         // Mute moves out of the wrapper exactly once (guarded: only
@@ -1106,7 +1109,9 @@ html[data-jvosd-mui-own-title] [data-jvosd-mui-bar] > .MuiTypography-root:not(.j
             fullscreen: '.btnFullscreen',
             airplay: '.btnAirPlay',
             download: '.btnDownload',
-            screenshot: '.btnScreenshot'
+            screenshot: '.btnScreenshot',
+            // VisoMaster Bridge plugin's button (inserted by its own script)
+            visomaster: '.btnVisoMaster'
         };
 
         // Same sensible default fallback as before: 3 of the 12 items
@@ -1115,8 +1120,15 @@ html[data-jvosd-mui-own-title] [data-jvosd-mui-bar] > .MuiTypography-root:not(.j
         // their raw insertion order would be a race.
         const orderCsv = (typeof config.BottomRightOrder === 'string' && config.BottomRightOrder)
             ? config.BottomRightOrder
-            : 'screenshot,download,favorite,episodepreview,subtitles,audio,mute,volumeslider,settings,airplay,pip,fullscreen';
+            : 'screenshot,download,visomaster,favorite,episodepreview,subtitles,audio,mute,volumeslider,settings,airplay,pip,fullscreen';
         const order = orderCsv.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+        // A list saved before VisoMaster Bridge was installed has no
+        // "visomaster": place it left of favorite (its own default),
+        // never at order 0 in front of everything.
+        if (order.indexOf('visomaster') === -1) {
+            const favIdx = order.indexOf('favorite');
+            order.splice(favIdx === -1 ? order.length : favIdx, 0, 'visomaster');
+        }
 
         Object.keys(idMap).forEach(function (id) {
             const el = container.querySelector(idMap[id]);
