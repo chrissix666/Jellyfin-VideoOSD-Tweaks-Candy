@@ -12,7 +12,12 @@
 
 This plugin grew out of my [Jellyfin VideoOSD Projects](https://github.com/chrissix666/Jellyfin-VideoOSD-Projects-Overview), a collection of standalone scripts for the Jellyfin video OSD. The scripts continue to work independently via JavaScript injector.
 
-I have developed many Jellyfin Web script mods over the years, but besides this one, only a single other true plugin: [Cinema Project](https://github.com/chrissix666/Jellyfin-Cinema-Project). A virtual cinema environment based on three.js that gives your movies an ambient feel, powered by visual metadata (artwork, theme songs, trailers, and more).
+Please also have a look at my other plugins:
+
+- [ArtworkPlus](https://github.com/chrissix666/Jellyfin-ArtworkPlus): shows the artwork Jellyfin leaves unused
+- [Cinema Project](https://github.com/chrissix666/Jellyfin-Cinema-Project): a virtual cinema environment based on three.js that gives your movies an ambient feel
+- [Destroy](https://github.com/chrissix666/Jellyfin-Destroy): turns the Jellyfin page you are looking at into a game level
+- [VisoMaster Bridge](https://github.com/chrissix666/Jellyfin-VisoMaster-Bridge): swaps faces in the film you are watching, with VisoMaster Fusion
 
 <img src="screenshots/OSD-mosaic.png" width="100%">
 <img src="screenshots/settings-mosaic.png" width="100%">
