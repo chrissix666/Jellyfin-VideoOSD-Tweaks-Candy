@@ -6,6 +6,8 @@
 
 *Not affiliated with or endorsed by Jellyfin.*
 
+*Mentioned in an article on XDA Developers: [I totally transformed Jellyfin's video player with one simple plugin](https://www.xda-developers.com/i-totally-transformed-jellyfins-video-player-with-one-simple-plugin/)*
+
 ---
 
 This plugin grew out of my [Jellyfin VideoOSD Projects](https://github.com/chrissix666/Jellyfin-VideoOSD-Projects-Overview), a collection of standalone scripts for the Jellyfin video OSD. The scripts continue to work independently via JavaScript injector.
